@@ -74,6 +74,22 @@ export function useSupabaseData() {
     return () => { mountedRef.current = false }
   }, [load])
 
+  // Refetch when the tab becomes visible again. Covers the common stale-data
+  // case: athlete opens the home screen, switches to another app, comes back
+  // hours later — without this they'd see whatever was cached. The
+  // generation-counter guard in `load` makes overlapping fetches safe.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') load(true)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [load])
+
   const refresh = useCallback(() => load(true), [load])
 
   // Expose a way for the dashboard to invalidate cache after saving
