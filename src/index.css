@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@theme {
+  /* Bay School navy - override via VITE_BRAND_PRIMARY for other schools */
+  --color-navy-50: #e6eaf2;
+  --color-navy-100: #b3bedb;
+  --color-navy-200: #8093c4;
+  --color-navy-300: #4d68ad;
+  --color-navy-400: #264d9c;
+  --color-navy-500: #003a8c;
+  --color-navy-600: #003380;
+  --color-navy-700: #002b71;
+  --color-navy-800: #002362;
+  --color-navy-900: #002776;
+  --color-accent: #2cccd3;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* iOS Add-to-Home-Screen mode: the status-bar-style is black-translucent
+   (set in index.html), so the webapp fills the full screen including under
+   the notch/clock area. Without compensation the header runs behind iOS UI.
+   Reserve safe-area-inset-top via the body, and paint it the brand color so
+   it blends with the navy header below. Only applies in standalone mode. */
+@media (display-mode: standalone) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    background-color: var(--color-navy-900);
+  }
+}
+
+/* Highlight row on hover — only non-sticky cells */
+.hover-row:hover td:not(.sticky) {
+  background-color: #eff6ff !important;
+}
+
+.scrollbar-always::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scrollbar-always::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+.scrollbar-always {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+@media print {
+  #root {
+    display: none !important;
+  }
+  .print-page-landscape {
+    page: landscape;
+    break-after: page;
+  }
+  .print-page-portrait {
+    page: portrait;
+    break-after: page;
+  }
+  @page landscape {
+    size: letter landscape;
+    margin: 0.5in;
+  }
+  @page portrait {
+    size: letter portrait;
+    margin: 0.5in;
+  }
+}
