@@ -156,6 +156,31 @@ Local dev: `.env.local` (gitignored)
 
 ---
 
+## Auth Setup (Supabase dashboard — not in the repo)
+
+Coach sign-in uses Supabase Google OAuth. The code side is just
+`supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })`
+in `src/hooks/useAuth.ts` — everything else is **dashboard configuration** that
+lives outside the repo. A fresh deploy will fail login until it's done:
+
+1. **Authentication → Providers → Google**: enable + paste Client ID/Secret from
+   a [Google Cloud](https://console.cloud.google.com/apis/credentials) **Web
+   application** OAuth client. Blank/placeholder values surface at login as
+   `provider is not enabled`.
+2. In that Google client, add `https://<project-ref>.supabase.co/auth/v1/callback`
+   to **Authorized redirect URIs**.
+3. **Authentication → URL Configuration**:
+   - **Site URL** → the deployed URL (NOT localhost in production).
+   - **Redirect URLs** → allowlist every login origin: `https://<deploy>/**`
+     and `http://localhost:5173/**`.
+
+Gotcha: `redirectTo: window.location.origin` is only honored if that origin is
+in the Redirect URLs allowlist. Otherwise Supabase falls back to the Site URL —
+if that's still the default `http://localhost:3000`, login lands on
+`localhost refused to connect`. (Vite dev runs on **5173**, not 3000.)
+
+---
+
 ## Development
 
 ```bash

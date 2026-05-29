@@ -40,14 +40,20 @@ npm install
 
 1. Sign up at [supabase.com](https://supabase.com) (free tier is plenty)
 2. New project → pick a region near your team
-3. **Authentication → Providers → Google**: enable, add your Google OAuth client ID/secret (use [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → Create OAuth client → Web application)
-4. **SQL Editor**: paste each file from `migrations/` in order:
+3. **Authentication → Providers → Google**: enable it and paste your Google OAuth client ID/secret. To get them:
+   - [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → **Create credentials → OAuth client ID → Web application** (configure the OAuth consent screen first if prompted — set it to *External* and add yourself under *Test users*).
+   - The **Client ID** ends in `.apps.googleusercontent.com`; the secret looks like `GOCSPX-…`. These are issued by Google — you can't make them up, and Supabase rejects blank/placeholder values (which is what surfaces as `provider is not enabled` at login).
+   - In the same Google client, add Supabase's callback to **Authorized redirect URIs**: `https://<your-project-ref>.supabase.co/auth/v1/callback` (the ref is in your Supabase project URL).
+4. **Authentication → URL Configuration**: the app signs in with `redirectTo: window.location.origin`, and Supabase only honors an origin that's in the allowlist — otherwise it bounces to the Site URL (default `http://localhost:3000`), which shows up as `localhost refused to connect`. Set:
+   - **Site URL** → your deployed URL (e.g. `https://your-team.vercel.app`). Use `http://localhost:5173` only while local dev is your main login target, then switch it back before sharing.
+   - **Redirect URLs** → add every origin you log in from, e.g. `https://your-team.vercel.app/**` and `http://localhost:5173/**`.
+5. **SQL Editor**: paste each file from `migrations/` in order:
    - `001_initial_schema.sql`
    - `002_strava.sql`
    - `003_athlete_bios.sql`
    - `004_offseason_plans.sql`
    - `005_rls_policies.sql`
-5. Settings → API: copy the `URL`, `anon` key, and `service_role` key
+6. Settings → API: copy the `URL`, `anon` key, and `service_role` key
 
 ### 3. Configure env vars
 
