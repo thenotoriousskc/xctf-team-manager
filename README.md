@@ -4,6 +4,8 @@ A cross-country / track & field team management web app. Coaches manage daily wo
 
 Built for [The Bay School Breakers](https://www.instagram.com/bayxctf/), now generalized so any team can deploy their own copy.
 
+> **Want to see it in action?** Check out the [`demo` branch](https://github.com/thenotoriousskc/xctf-team-manager/tree/demo) — it ships with realistic-but-fake roster, workouts, and mileage data. See [`seeds/README.md`](https://github.com/thenotoriousskc/xctf-team-manager/blob/demo/seeds/README.md) on the demo branch for deploy steps.
+
 ## Features
 
 - **Per-athlete workout cards** with VDOT-derived training paces from Athletic.net PRs
