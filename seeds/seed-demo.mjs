@@ -8,15 +8,19 @@
 //   node seeds/seed-demo.mjs            # dry run
 //   node seeds/seed-demo.mjs --apply    # write to .env.local's Supabase
 //   node seeds/seed-demo.mjs --apply --wipe  # delete all existing data first
+//   node seeds/seed-demo.mjs --apply --bios-only  # only (re)seed athlete bios
 //
-// Run this AFTER applying every file in migrations/. It's idempotent on
-// athlete name + plan label — re-runs update in place.
+// Run this AFTER applying every file in migrations/. Bios are idempotent
+// (athlete_name PK, merge-duplicates) so --bios-only is safe to re-run.
+// The roster/plan/workout/mileage seed is NOT idempotent — re-running the
+// full seed without --wipe creates duplicate athletes.
 
 import { readFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 
 const APPLY = process.argv.includes('--apply')
 const WIPE = process.argv.includes('--wipe')
+const BIOS_ONLY = process.argv.includes('--bios-only')
 
 const env = {}
 for (const line of readFileSync('.env.local', 'utf8').split('\n')) {
@@ -66,6 +70,32 @@ const ROSTER = [
   { name: 'Sage Martinez',    group: 'Field',     target: '12', vdot: null },
   { name: 'Rowan O\'Connor',  group: 'Distance',  target: '24', vdot: 48.0, offseason: true },
   { name: 'Emerson Carter',   group: 'Distance',  target: '28', vdot: 51.0, inactive: true },
+]
+
+// ── Athlete bios ──────────────────────────────────────────────────────────────
+// One bio per athlete (keyed by name, matching ROSTER). photo_url left null —
+// the bio page falls back to initials. Re-runnable: athlete_bios PK is the name.
+const BIOS = [
+  { athlete_name: 'Alex Chen',       nickname: 'Speedy',     cheer: 'Chant "AL-EX" on the final straight — it works every time.', likes: 'Negative splits, breakfast burritos, rainy long runs', dislikes: 'Treadmills, untied shoelaces', fun_facts: 'Team captain. Has run every day for 400+ days straight.' },
+  { athlete_name: 'Jordan Kim',      nickname: 'JK',         cheer: 'Just yell "GO JORDAN!" loud enough to hear at the mile mark.', likes: 'Track Tuesdays, cold brew, new PRs', dislikes: 'Hills (claims to, secretly loves them)', fun_facts: 'Can recite every mile split from last season\'s 5k.' },
+  { athlete_name: 'Maya Patel',      nickname: null,         cheer: 'A cowbell does the trick.', likes: 'Easy days, team pasta dinners', dislikes: 'Early-morning intervals', fun_facts: 'Plays violin and runs — claims both are about rhythm.' },
+  { athlete_name: 'Taylor Brooks',   nickname: 'T-Bird',     cheer: 'Caw like a bird at the start line. Long story.', likes: 'Tempo runs, trail shoes, podcasts on the cooldown', dislikes: 'Humidity', fun_facts: 'Holds the team record for the steeplechase.' },
+  { athlete_name: 'Jamie Rivera',    nickname: 'Jam',        cheer: 'Clap on the beat — Jamie paces to it.', likes: 'Group runs, fruit snacks at the finish', dislikes: 'Running alone', fun_facts: 'Started as a sprinter, converted to distance sophomore year.' },
+  { athlete_name: 'Sam Davis',       nickname: 'Sammy D',    cheer: '"LET\'S GO SAM" — short and loud.', likes: 'Base mileage, building back from offseason', dislikes: 'Taking days off', fun_facts: 'Building base this offseason; aiming for a fall breakout.' },
+  { athlete_name: 'Casey Nguyen',    nickname: null,         cheer: 'A quiet thumbs-up means the world to Casey.', likes: 'Steady easy miles, sketchbook after practice', dislikes: 'Crowded start lines', fun_facts: 'Logs miles by hand in a paper journal.' },
+  { athlete_name: 'Riley Foster',    nickname: 'Rils',       cheer: 'Ring a cowbell and shout the last name.', likes: 'Fartleks, golden-hour runs', dislikes: 'Wind on the back stretch', fun_facts: 'Knows every shortcut on the team\'s long-run loop.' },
+  { athlete_name: 'Avery Park',      nickname: 'Ave',        cheer: '"AVE-RY, AVE-RY" with a clap between.', likes: 'The 800, fast finishes', dislikes: 'Long slow distance', fun_facts: 'Drops a wicked kick in the last 200m.' },
+  { athlete_name: 'Quinn Hayes',     nickname: 'Q',          cheer: 'Just "Q!" — one letter, full volume.', likes: 'Mid-distance reps, team playlists', dislikes: 'Lane-1 traffic', fun_facts: 'DJs the bus rides to meets.' },
+  { athlete_name: 'Drew Murphy',     nickname: 'Murph',      cheer: 'Yell "MURPH!" — he\'ll find another gear.', likes: 'The 1500, post-run smoothies', dislikes: 'False starts', fun_facts: 'Can do the entire race warmup with eyes closed.' },
+  { athlete_name: 'Skyler Reyes',    nickname: 'Sky',        cheer: 'Point at the sky and shout the name.', likes: 'Coming back strong from the offseason', dislikes: 'Cold mornings', fun_facts: 'Rebuilding mileage this offseason after a great track season.' },
+  { athlete_name: 'Morgan Wells',    nickname: 'Mo',         cheer: '"GO MO" works at any distance.', likes: 'The 200, blocks practice', dislikes: 'Distance day', fun_facts: 'Fastest reaction time on the team out of the blocks.' },
+  { athlete_name: 'Reese Anderson',  nickname: null,         cheer: 'A loud "REESE!" at the 100m mark.', likes: 'Sprint relays, handoff drills', dislikes: 'Dropped batons', fun_facts: 'Anchors the 4×100.' },
+  { athlete_name: 'Cameron Liu',     nickname: 'Cam',        cheer: '"CAM-ERON" — two claps, then go.', likes: 'The 400, the dreaded-but-loved one-lap', dislikes: 'The back half of the 400 (everyone does)', fun_facts: 'Calls the 400 "a sprint that lies to you."' },
+  { athlete_name: 'Logan Bauer',     nickname: 'Bauer',      cheer: 'Last-name energy: "BAU-ER!"', likes: 'Short sprints, explosive starts', dislikes: 'Anything over 400m', fun_facts: 'Long jumps in the offseason for fun.' },
+  { athlete_name: 'Parker Schultz',  nickname: 'Park',       cheer: 'Cheer loudest when the bar goes up.', likes: 'High jump, the approach run', dislikes: 'Windy runways', fun_facts: 'Field athlete — measures success in inches, not minutes.' },
+  { athlete_name: 'Sage Martinez',   nickname: null,         cheer: 'A big "SAGE!" before the throw.', likes: 'Shot put, technique sessions', dislikes: 'Rainy ring conditions', fun_facts: 'Field athlete; keeps a tape measure in their bag at all times.' },
+  { athlete_name: "Rowan O'Connor",  nickname: 'Ro',         cheer: 'Roll the R: "RRROWAN!"', likes: 'Offseason base, trail long runs', dislikes: 'Skipping the warmup', fun_facts: 'Building base this offseason; favorite run is the Saturday trail loop.' },
+  { athlete_name: 'Emerson Carter',  nickname: 'Em',         cheer: 'Save your voice — Em\'s out this season but still cheers loudest.', likes: 'Cheering the team on, comeback plans', dislikes: 'Being sidelined', fun_facts: 'Currently inactive/recovering — team\'s unofficial hype captain.' },
 ]
 
 // ── Plan templates ──────────────────────────────────────────────────────────
@@ -202,10 +232,29 @@ function generateMileage() {
   return rows
 }
 
+// ── Bios ──────────────────────────────────────────────────────────────────
+async function seedBios() {
+  console.log(`\n[bios: ${BIOS.length} rows]`)
+  const r = await sb('athlete_bios', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(BIOS),
+  })
+  if (!r.ok) console.error(`  FAIL: ${r.status} ${await r.text()}`)
+  else console.log(`  ✓ ${BIOS.length} bios upserted`)
+}
+
 // ── Main ────────────────────────────────────────────────────────────────────
 async function main() {
   console.log(`Target: ${SUPABASE_URL}`)
-  console.log(`Will seed: ${ROSTER.length} athletes, ${PLAN_TEMPLATES.length} plans, 1 workout, ~${ROSTER.filter(r => !r.inactive).length * 12} mileage rows`)
+  if (BIOS_ONLY) {
+    console.log(`Will seed: ${BIOS.length} athlete bios only`)
+    if (!APPLY) { console.log('\nDry run. Re-run with --apply to write.'); return }
+    await seedBios()
+    console.log('\nDone.')
+    return
+  }
+  console.log(`Will seed: ${ROSTER.length} athletes, ${PLAN_TEMPLATES.length} plans, 1 workout, ~${ROSTER.filter(r => !r.inactive).length * 12} mileage rows, ${BIOS.length} bios`)
   if (WIPE) console.log('⚠️  --wipe set: will DELETE all existing rows in roster, offseason_plan_templates, workout_rows, strava_activities first')
 
   if (!APPLY) { console.log('\nDry run. Re-run with --apply to write.'); return }
@@ -284,6 +333,10 @@ async function main() {
     if (!r.ok) console.error(`  batch FAIL: ${r.status} ${await r.text()}`)
     else process.stdout.write(`\r  wrote ${Math.min(i + BATCH, mileage.length)}/${mileage.length}`)
   }
+
+  // ── Bios ──────────────────────────────────────────────────────────────────
+  await seedBios()
+
   console.log('\n\nDone.')
 }
 
