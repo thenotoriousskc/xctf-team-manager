@@ -299,36 +299,25 @@ export async function fetchAthleteHistory(athleteName: string): Promise<WorkoutH
 
 // Save the offseason plan templates (full replace, mirrors saveRoster pattern).
 // IDs are preserved when present so roster.plan_template_id references stay valid.
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+//
+// RLS denies anon writes to offseason_plan_templates, so writes go through the
+// /api/plan-templates serverless function (service role), gated by the coach's
+// Supabase session. The dedupe/UUID logic lives server-side in api/plan-templates.ts.
 export async function savePlanTemplates(templates: PlanTemplate[]) {
-  // Delete missing IDs explicitly (so we can preserve IDs of survivors). Only
-  // consider real UUIDs — non-UUID client IDs aren't in the DB yet, so they
-  // can't be "missing".
-  const { data: existing, error: existErr } = await supabase
-    .from('offseason_plan_templates')
-    .select('id')
-  if (existErr) throw new Error(existErr.message)
-  const keepIds = new Set(templates.map(t => t.id).filter(id => id && UUID_RE.test(id)))
-  const toDelete = (existing ?? []).map(r => r.id).filter(id => !keepIds.has(id))
-  if (toDelete.length > 0) {
-    const { error: delErr } = await supabase.from('offseason_plan_templates').delete().in('id', toDelete)
-    if (delErr) throw new Error(delErr.message)
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+  if (!token) throw new Error('Not signed in — cannot save plan templates')
+
+  const res = await fetch('/api/plan-templates', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ templates }),
+  })
+  if (!res.ok) {
+    const msg = await res.text().catch(() => '')
+    throw new Error(`Plan template save failed (${res.status}): ${msg}`)
   }
-
-  if (templates.length === 0) return
-
-  // Upsert each. Strip non-UUID client IDs so Postgres can assign one — a
-  // legacy uid() (base-36 Math.random) would otherwise raise "invalid input
-  // syntax for type uuid".
-  const rows = templates.map((t, i) => ({
-    ...(t.id && UUID_RE.test(t.id) ? { id: t.id } : {}),
-    label: t.label,
-    description: t.description,
-    sort_order: i,
-    weekly_miles: t.weeklyMiles,
-    tempo_minutes: t.tempoMinutes,
-    days: t.days,
-  }))
-  const { error: upErr } = await supabase.from('offseason_plan_templates').upsert(rows)
-  if (upErr) throw new Error(upErr.message)
 }
