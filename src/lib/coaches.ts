@@ -9,7 +9,7 @@
 // If BOTH lists are empty, access is open to any signed-in Google user — this
 // preserves the original behavior for fresh/unconfigured deployments.
 
-function envCoaches(): string[] {
+export function envCoaches(): string[] {
   return (import.meta.env.VITE_AUTHORIZED_COACHES ?? '')
     .split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean)
 }

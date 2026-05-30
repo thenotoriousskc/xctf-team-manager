@@ -14,6 +14,7 @@ function timeAgo(iso: string | null | undefined): string {
 const PACE_TYPES: PaceType[] = ['easy', '5k', '3200', '1600', '800', '400', 'tempo', 'threshold', 'fast and relaxed', '95% effort']
 const DIST_UNITS: DistanceUnit[] = ['meters', 'miles', 'minutes']
 import { saveWorkoutRows, saveRoster, saveWorkoutHistory, fetchDayHistory, saveDayHistory, savePlanTemplates, saveSettings } from '../lib/db.ts'
+import { envCoaches } from '../lib/coaches.ts'
 import type { AthleticNetPR } from '../lib/types.ts'
 import { loadPRsFile, findAthleteId } from '../hooks/useAthleticNetPRs.ts'
 import { computeTrainingPaces } from '../lib/vdot.ts'
@@ -2496,10 +2497,14 @@ function SettingsTab({ value, onChange, currentEmail }: { value: SettingsValue; 
 
   const [newCoach, setNewCoach] = useState('')
   const currentLower = (currentEmail ?? '').trim().toLowerCase()
+  const envList = useMemo(() => envCoaches(), [])
+  // DB coaches that aren't already granted via the env var (those are shown
+  // separately, read-only, so we don't list them twice).
+  const dbOnly = value.coaches.filter(c => !envList.includes(c.toLowerCase()))
   const addCoach = () => {
     const email = newCoach.trim().toLowerCase()
     if (!email || !email.includes('@')) return
-    if (value.coaches.some(c => c.toLowerCase() === email)) { setNewCoach(''); return }
+    if (envList.includes(email) || value.coaches.some(c => c.toLowerCase() === email)) { setNewCoach(''); return }
     patch({ coaches: [...value.coaches, email] })
     setNewCoach('')
   }
@@ -2516,10 +2521,23 @@ function SettingsTab({ value, onChange, currentEmail }: { value: SettingsValue; 
           <p className="text-xs text-gray-500 mt-0.5 mb-3">
             Google accounts allowed into the coach dashboard. Add a coach's email below; they sign in with Google to get access.
           </p>
+          {envList.length > 0 && (
+            <div className="mb-3">
+              <p className="text-xs font-medium text-gray-500 mb-1">From environment config (read-only)</p>
+              <div className="space-y-2">
+                {envList.map(email => (
+                  <div key={email} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-slate-50 px-3 py-2">
+                    <span className="text-sm text-gray-600 font-mono truncate">{email}{email === currentLower && <span className="ml-2 text-xs text-gray-400">(you)</span>}</span>
+                    <span className="text-xs text-gray-400">env var</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="space-y-2">
-            {value.coaches.length === 0 ? (
+            {dbOnly.length === 0 ? (
               <p className="text-xs text-gray-400 italic">No coaches added here yet.</p>
-            ) : value.coaches.map(email => {
+            ) : dbOnly.map(email => {
               const isSelf = email.toLowerCase() === currentLower
               return (
                 <div key={email} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2">
