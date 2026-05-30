@@ -2461,7 +2461,7 @@ function PlanDayEditor({
 //     evening-PT entries landed on the next UTC date — see CLAUDE.md gotchas)
 //   - Video of the day: label + URL shown on the athlete card
 // Auto-saves through the dashboard's debounced save pipeline.
-type SettingsValue = { timezone: string; videoLabel: string; videoUrl: string }
+type SettingsValue = { timezone: string; videoLabel: string; videoUrl: string; coaches: string[] }
 
 // Common zones first, then everything `Intl` reports. Most coaches won't need
 // to scroll past the top group; the full list is there for future generic
@@ -2484,7 +2484,7 @@ function allTimezones(): string[] {
   return COMMON_TIMEZONES
 }
 
-function SettingsTab({ value, onChange }: { value: SettingsValue; onChange: (v: SettingsValue) => void }) {
+function SettingsTab({ value, onChange, currentEmail }: { value: SettingsValue; onChange: (v: SettingsValue) => void; currentEmail: string | null }) {
   const all = useMemo(() => allTimezones(), [])
   const rest = useMemo(() => all.filter(z => !COMMON_TIMEZONES.includes(z)).sort(), [all])
   const tzNow = useMemo(() => {
@@ -2494,9 +2494,66 @@ function SettingsTab({ value, onChange }: { value: SettingsValue; onChange: (v: 
   }, [value.timezone])
   const patch = (p: Partial<SettingsValue>) => onChange({ ...value, ...p })
 
+  const [newCoach, setNewCoach] = useState('')
+  const currentLower = (currentEmail ?? '').trim().toLowerCase()
+  const addCoach = () => {
+    const email = newCoach.trim().toLowerCase()
+    if (!email || !email.includes('@')) return
+    if (value.coaches.some(c => c.toLowerCase() === email)) { setNewCoach(''); return }
+    patch({ coaches: [...value.coaches, email] })
+    setNewCoach('')
+  }
+  const removeCoach = (email: string) => {
+    patch({ coaches: value.coaches.filter(c => c.toLowerCase() !== email.toLowerCase()) })
+  }
+
   return (
     <div className="flex-1 overflow-auto p-6 bg-slate-50">
       <div className="max-w-2xl mx-auto space-y-6">
+        {/* Coaches */}
+        <section className="bg-white rounded-xl border border-gray-200 p-5">
+          <h3 className="text-base font-semibold text-gray-900">Coaches</h3>
+          <p className="text-xs text-gray-500 mt-0.5 mb-3">
+            Google accounts allowed into the coach dashboard. Add a coach's email below; they sign in with Google to get access.
+          </p>
+          <div className="space-y-2">
+            {value.coaches.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">No coaches added here yet.</p>
+            ) : value.coaches.map(email => {
+              const isSelf = email.toLowerCase() === currentLower
+              return (
+                <div key={email} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2">
+                  <span className="text-sm text-gray-800 font-mono truncate">{email}{isSelf && <span className="ml-2 text-xs text-gray-400">(you)</span>}</span>
+                  <button
+                    onClick={() => removeCoach(email)}
+                    disabled={isSelf}
+                    title={isSelf ? "You can't remove yourself" : 'Remove coach'}
+                    className="text-xs text-red-500 hover:text-red-700 disabled:text-gray-300 disabled:cursor-not-allowed"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <input
+              type="email"
+              value={newCoach}
+              onChange={e => setNewCoach(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCoach() } }}
+              placeholder="coach@school.org"
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+            <button
+              onClick={addCoach}
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
+            >
+              Add
+            </button>
+          </div>
+        </section>
+
         {/* Timezone */}
         <section className="bg-white rounded-xl border border-gray-200 p-5">
           <h3 className="text-base font-semibold text-gray-900">Timezone</h3>
@@ -2595,6 +2652,7 @@ export function CoachDashboard({
     timezone: data.timezone || 'America/Los_Angeles',
     videoLabel: data.videoLabel ?? '',
     videoUrl: data.videoUrl ?? '',
+    coaches: data.coaches ?? [],
   })
 
   // Custom athlete order (persisted in localStorage)
@@ -2779,6 +2837,7 @@ export function CoachDashboard({
           timezone: settingsRef.current.timezone,
           videoLabel: settingsRef.current.videoLabel,
           videoUrl: settingsRef.current.videoUrl,
+          coaches: settingsRef.current.coaches,
         }),
       ])
       setSavedAt(new Date())
@@ -2872,6 +2931,7 @@ export function CoachDashboard({
           <SettingsTab
             value={settings}
             onChange={setSettings}
+            currentEmail={user.email ?? null}
           />
         ) : tab === 'plans' ? (
           <PlansTab

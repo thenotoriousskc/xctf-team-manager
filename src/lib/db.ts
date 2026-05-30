@@ -26,6 +26,7 @@ export async function fetchSheetData(): Promise<SheetData> {
     publishStatus: (s.publish_status ?? 'PUBLISH') as PublishStatus,
     stravaConnected: !!s.strava_access_token,
     timezone: s.timezone ?? 'America/Los_Angeles',
+    coaches: Array.isArray(s.coaches) ? (s.coaches as string[]) : [],
     workoutRows: (workoutRowsRes.data ?? []).map(r => ({
       athletesRaw: r.athletes_raw,
       coach: r.coach,
@@ -94,6 +95,7 @@ export async function saveSettings(settings: {
   videoUrl: string
   publishStatus: PublishStatus
   timezone: string
+  coaches: string[]
 }) {
   const { error } = await supabase.from('settings').update({
     pre_run_routine: settings.preRunRoutine,
@@ -102,6 +104,7 @@ export async function saveSettings(settings: {
     video_url: settings.videoUrl,
     publish_status: settings.publishStatus,
     timezone: settings.timezone,
+    coaches: settings.coaches,
     updated_at: new Date().toISOString(),
   }).eq('id', 1)
   if (error) throw new Error(error.message)

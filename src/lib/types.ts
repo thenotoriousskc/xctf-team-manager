@@ -121,4 +121,5 @@ export interface SheetData {
   publishStatus: PublishStatus
   stravaConnected: boolean
   timezone: string // IANA name (e.g. "America/Los_Angeles"); drives all calendar-day math
+  coaches: string[] // runtime-editable authorized coach emails (merged with VITE_AUTHORIZED_COACHES)
 }

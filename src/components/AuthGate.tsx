@@ -1,5 +1,6 @@
 import { useAuth } from '../hooks/useAuth.ts'
 import type { SheetData } from '../lib/types.ts'
+import { isAuthorizedCoach } from '../lib/coaches.ts'
 import { CoachDashboard } from './CoachDashboard.tsx'
 
 export function AuthGate({
@@ -19,10 +20,7 @@ export function AuthGate({
     )
   }
 
-  const allowedCoaches = (import.meta.env.VITE_AUTHORIZED_COACHES ?? '')
-    .split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean)
-
-  if (user && allowedCoaches.length > 0 && !allowedCoaches.includes(user.email?.toLowerCase() ?? '')) {
+  if (user && !isAuthorizedCoach(user.email, data.coaches)) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4">
         <p className="text-gray-600">

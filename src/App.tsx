@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useSupabaseData } from './hooks/useSupabaseData.ts'
 import { useAuth } from './hooks/useAuth.ts'
 import { findWorkoutForAthlete, findRosterEntry, findGroupMates } from './lib/sheets.ts'
+import { isAuthorizedCoach } from './lib/coaches.ts'
 import { AthletePicker } from './components/AthletePicker.tsx'
 import { WorkoutCard } from './components/WorkoutCard.tsx'
 import { OffseasonCard } from './components/OffseasonCard.tsx'
@@ -323,17 +324,16 @@ export default function App() {
   const nextAthlete = currentIdx >= 0 && currentIdx < activeRoster.length - 1 ? activeRoster[currentIdx + 1].name : null
 
   // Mileage edit auth: isSelf when the signed-in email matches the roster row's
-  // email (preferred — explicit binding); isCoach when email is in
-  // VITE_AUTHORIZED_COACHES. Either grants edit. We deliberately do NOT fall
-  // back to display-name matching here: the auto-bind effect above writes
-  // matching names' emails on first sign-in, so this stays tight.
-  const allowedCoaches = (import.meta.env.VITE_AUTHORIZED_COACHES ?? '')
-    .split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean)
+  // email (preferred — explicit binding); isCoach when email is authorized
+  // (VITE_AUTHORIZED_COACHES or the Settings-tab coach list). Either grants
+  // edit. We deliberately do NOT fall back to display-name matching here: the
+  // auto-bind effect above writes matching names' emails on first sign-in, so
+  // this stays tight.
   const userEmailLower = user?.email?.toLowerCase() ?? ''
   const isSelf = !!userEmailLower
     && !!rosterEntry?.email
     && rosterEntry.email.toLowerCase() === userEmailLower
-  const isCoach = !!user && (allowedCoaches.length === 0 || allowedCoaches.includes(userEmailLower))
+  const isCoach = !!user && isAuthorizedCoach(user.email, data.coaches)
   const canEditMileage = isSelf || isCoach
   const signedInAs = user?.email ?? null
 

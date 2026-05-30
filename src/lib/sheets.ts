@@ -90,7 +90,7 @@ export async function fetchSheetData(): Promise<SheetData> {
   const { preRunRoutine, postRunRoutine, videoLabel, videoUrl, workoutRows: workouts, publishStatus } = parseWorkoutTab(workoutRows)
   const roster = parseRosterTab(rosterRows)
 
-  return { preRunRoutine, postRunRoutine, videoLabel, videoUrl, workoutRows: workouts, roster, planTemplates: [], publishStatus, stravaConnected: false, timezone: 'America/Los_Angeles' }
+  return { preRunRoutine, postRunRoutine, videoLabel, videoUrl, workoutRows: workouts, roster, planTemplates: [], publishStatus, stravaConnected: false, timezone: 'America/Los_Angeles', coaches: [] }
 }
 
 export function findWorkoutForAthlete(
