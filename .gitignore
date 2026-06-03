@@ -31,3 +31,6 @@ strava-feed-raw.html
 
 # TS build cache
 *.tsbuildinfo
+
+# Supabase CLI local state
+supabase/.temp/
