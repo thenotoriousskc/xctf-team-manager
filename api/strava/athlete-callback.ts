@@ -3,6 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 const SUPABASE_URL = process.env.SUPABASE_URL!
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const RUN_TYPES = new Set(['Run', 'TrailRun', 'VirtualRun', 'Treadmill'])
+const APP_URL = 'https://xctf-team.vercel.app'
 
 async function fetchAllActivities(accessToken: string): Promise<any[]> {
   const all: any[] = []
@@ -76,7 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const athlete = decodeURIComponent(state ?? '')
 
     if (!code || !athlete) {
-      return res.redirect('https://xctf-team.vercel.app?strava_athlete=error')
+      return res.redirect(`${APP_URL}?strava_athlete=error`)
     }
 
     const tokenRes = await fetch('https://www.strava.com/oauth/token', {
@@ -92,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!tokenRes.ok) {
       console.error('Token exchange failed:', await tokenRes.text())
-      return res.redirect(`https://xctf-team.vercel.app?athlete=${encodeURIComponent(athlete)}&strava_athlete=error`)
+      return res.redirect(`${APP_URL}?athlete=${encodeURIComponent(athlete)}&strava_athlete=error`)
     }
 
     const token = await tokenRes.json()
@@ -118,7 +119,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!dbRes.ok) {
       console.error('DB save failed:', await dbRes.text())
-      return res.redirect(`https://xctf-team.vercel.app?athlete=${encodeURIComponent(athlete)}&strava_athlete=error`)
+      return res.redirect(`${APP_URL}?athlete=${encodeURIComponent(athlete)}&strava_athlete=error`)
     }
 
     // Fetch and save full activity history (best-effort, don't block on failure)
@@ -131,9 +132,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.error('History sync failed (non-fatal):', err)
     }
 
-    res.redirect(`https://xctf-team.vercel.app?athlete=${encodeURIComponent(athlete)}&strava_athlete=connected`)
+    res.redirect(`${APP_URL}?athlete=${encodeURIComponent(athlete)}&strava_athlete=connected`)
   } catch (err) {
     console.error('Athlete callback crash:', err)
-    res.redirect('https://xctf-team.vercel.app?strava_athlete=error')
+    res.redirect(`${APP_URL}?strava_athlete=error`)
   }
 }
