@@ -1,6 +1,8 @@
 import { supabase } from './supabase.ts'
 import type { WorkoutRow, RosterEntry, SheetData, PublishStatus, WorkoutSegment, WorkoutHistoryEntry, DayHistoryGroup, PlanTemplate, PlanDay } from './types.ts'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 // ─── Read ────────────────────────────────────────────────────────────────────
 
 export async function fetchSheetData(): Promise<SheetData> {
@@ -134,7 +136,39 @@ export async function saveWorkoutRows(rows: (WorkoutRow & { id?: string })[]) {
   if (insErr) throw new Error(insErr.message)
 }
 
-export async function saveRoster(entries: (RosterEntry & { id?: string })[]) {
+type EditableRosterEntry = RosterEntry & { id?: string }
+
+// The persisted, coach-editable fields that decide whether a row "changed".
+// Excludes server-managed columns (login/strava timestamps) which are
+// preserved from the DB, not diffed.
+function rosterRowKey(e: EditableRosterEntry): string {
+  return JSON.stringify({
+    name: e.name,
+    group: e.group,
+    target: e.target,
+    note: e.note,
+    checkout: e.checkout,
+    athleticNetId: e.athleticNetId ?? null,
+    inactive: !!e.inactive,
+    bioEdit: !!e.bioEdit,
+    offseason: !!e.offseason,
+    manualMileage: !!e.manualMileage,
+    email: e.email ?? null,
+    vdot: e.vdot ?? null,
+    planTemplateId: e.planTemplateId ?? null,
+  })
+}
+
+// Row-level save. Diffs the current roster against `original` (the roster as
+// loaded/last-saved) and only writes rows that were added, removed, reordered,
+// or edited. This replaces the old delete-all-then-insert, which rewrote every
+// row from this tab's in-memory state on every save — clobbering plan
+// assignments (and other fields) for athletes changed elsewhere that this tab
+// didn't know about. Untouched rows are now left alone.
+//
+// `original` omitted → upsert every current row, delete nothing (safe fallback;
+// loses removed-athlete deletion but never wipes data).
+export async function saveRoster(entries: EditableRosterEntry[], original?: EditableRosterEntry[]) {
   // Preserve fields written server-side (login/strava timestamps) and the
   // email column (auto-bound when an athlete signs in — without this, a stale
   // dashboard saving without email would clobber the bound value back to null).
@@ -151,34 +185,65 @@ export async function saveRoster(entries: (RosterEntry & { id?: string })[]) {
     }
   }
 
-  const { error: delErr } = await supabase.from('roster').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-  if (delErr) throw new Error(delErr.message)
+  // Delete rows the coach removed (present in the load baseline, gone now).
+  const curIds = new Set(entries.map(e => e.id))
+  const deletedIds = (original ?? [])
+    .map(e => e.id)
+    .filter((id): id is string => !!id && UUID_RE.test(id) && !curIds.has(id))
+  if (deletedIds.length > 0) {
+    const { error: delErr } = await supabase.from('roster').delete().in('id', deletedIds)
+    if (delErr) throw new Error(delErr.message)
+  }
 
-  if (entries.length === 0) return
+  // A row is dirty if it's new, its content changed, or its position (→
+  // sort_order) changed.
+  const origById = new Map((original ?? []).map((e, i) => [e.id, { entry: e, index: i }]))
+  const dirty = entries
+    .map((r, i) => ({ r, i }))
+    .filter(({ r, i }) => {
+      const o = origById.get(r.id)
+      return !o || o.index !== i || rosterRowKey(o.entry) !== rosterRowKey(r)
+    })
 
-  const { error: insErr } = await supabase.from('roster').insert(
-    entries.map((r, i) => ({
-      name: r.name,
-      group: r.group,
-      target: r.target,
-      note: r.note,
-      checkout: r.checkout,
-      athletic_net_id: r.athleticNetId ?? null,
-      sort_order: i,
-      last_login_at: tsMap[r.name]?.login ?? null,
-      last_strava_pull_at: tsMap[r.name]?.strava ?? null,
-      inactive: r.inactive ?? false,
-      bio_edit: r.bioEdit ?? false,
-      offseason: r.offseason ?? false,
-      manual_mileage: r.manualMileage ?? false,
-      // Coach's explicit edit (r.email !== undefined in the form) wins.
-      // Otherwise preserve whatever the DB has (so auto-bind isn't clobbered).
-      email: r.email !== undefined ? r.email : (tsMap[r.name]?.email ?? null),
-      vdot: r.vdot !== undefined ? r.vdot : (tsMap[r.name]?.vdot ?? null),
-      plan_template_id: r.planTemplateId ?? null,
-    }))
-  )
-  if (insErr) throw new Error(insErr.message)
+  if (dirty.length === 0) return
+
+  const baseCols = ({ r, i }: { r: EditableRosterEntry; i: number }) => ({
+    name: r.name,
+    group: r.group,
+    target: r.target,
+    note: r.note,
+    checkout: r.checkout,
+    athletic_net_id: r.athleticNetId ?? null,
+    sort_order: i,
+    last_login_at: tsMap[r.name]?.login ?? null,
+    last_strava_pull_at: tsMap[r.name]?.strava ?? null,
+    inactive: r.inactive ?? false,
+    bio_edit: r.bioEdit ?? false,
+    offseason: r.offseason ?? false,
+    manual_mileage: r.manualMileage ?? false,
+    // Coach's explicit edit (r.email !== undefined in the form) wins.
+    // Otherwise preserve whatever the DB has (so auto-bind isn't clobbered).
+    email: r.email !== undefined ? r.email : (tsMap[r.name]?.email ?? null),
+    vdot: r.vdot !== undefined ? r.vdot : (tsMap[r.name]?.vdot ?? null),
+    plan_template_id: r.planTemplateId ?? null,
+  })
+
+  // Split by request so each payload has a uniform column set: existing rows
+  // upsert by their DB UUID; new rows (client uid()) insert and let Postgres
+  // assign a real UUID.
+  const existing2 = dirty.filter(({ r }) => r.id && UUID_RE.test(r.id))
+  const fresh = dirty.filter(({ r }) => !(r.id && UUID_RE.test(r.id)))
+
+  if (existing2.length > 0) {
+    const { error } = await supabase.from('roster').upsert(
+      existing2.map(d => ({ id: d.r.id, ...baseCols(d) }))
+    )
+    if (error) throw new Error(error.message)
+  }
+  if (fresh.length > 0) {
+    const { error } = await supabase.from('roster').insert(fresh.map(baseCols))
+    if (error) throw new Error(error.message)
+  }
 }
 
 export async function saveWorkoutHistory(workoutRows: WorkoutRow[], roster: RosterEntry[]) {

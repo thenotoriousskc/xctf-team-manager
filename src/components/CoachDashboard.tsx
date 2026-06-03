@@ -2750,6 +2750,14 @@ export function CoachDashboard({
   settingsRef.current = settings
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mountedRef = useRef(false)
+  // Snapshot of each slice as last persisted. Auto-save only writes slices that
+  // actually changed — without this, editing a plan template (or anything) would
+  // trigger a full destructive saveRoster from possibly-stale in-memory state,
+  // clobbering plan assignments this tab doesn't know about (see saveRoster).
+  const savedSnapshot = useRef<{ workouts: string; roster: string; plans: string; settings: string } | null>(null)
+  // The roster as last loaded/saved — the baseline saveRoster diffs against so
+  // it only writes rows that actually changed (see saveRoster).
+  const savedRoster = useRef<EditableRosterEntry[]>(roster)
 
   const handleWorkoutChange = (id: string, k: keyof WorkoutRow, v: string | WorkoutSegment[]) =>
     setWorkoutRows(rows => rows.map(r => r.id === id ? { ...r, [k]: v } : r))
@@ -2840,24 +2848,43 @@ export function CoachDashboard({
   const handleSave = useCallback(async () => {
     setSaving(true)
     setSaveError(null)
+    // Only persist slices that changed since the last save/load. saveRoster and
+    // saveWorkoutRows are full destructive replaces, so saving an unchanged
+    // slice from this tab's (possibly stale) state would revert edits made
+    // elsewhere — e.g. a plan-template edit must not rewrite the roster.
+    const cur = {
+      workouts: JSON.stringify(workoutRowsRef.current),
+      roster: JSON.stringify(rosterRef.current),
+      plans: JSON.stringify(planTemplatesRef.current),
+      settings: JSON.stringify(settingsRef.current),
+    }
+    const snap = savedSnapshot.current
+    const workoutsChanged = !snap || cur.workouts !== snap.workouts
+    const rosterChanged = !snap || cur.roster !== snap.roster
+    const plansChanged = !snap || cur.plans !== snap.plans
+    const settingsChanged = !snap || cur.settings !== snap.settings
     try {
-      await Promise.all([
-        saveWorkoutRows(workoutRowsRef.current),
-        saveRoster(rosterRef.current),
-        saveWorkoutHistory(workoutRowsRef.current, rosterRef.current),
-        savePlanTemplates(planTemplatesRef.current),
-        saveSettings({
-          // Preserve hidden fields from the initial data load (we don't expose
-          // these in any tab, but we mustn't clobber them on every save).
-          preRunRoutine: data.preRunRoutine,
-          postRunRoutine: data.postRunRoutine,
-          publishStatus: data.publishStatus,
-          timezone: settingsRef.current.timezone,
-          videoLabel: settingsRef.current.videoLabel,
-          videoUrl: settingsRef.current.videoUrl,
-          coaches: settingsRef.current.coaches,
-        }),
-      ])
+      const ops: Promise<unknown>[] = []
+      if (workoutsChanged) ops.push(saveWorkoutRows(workoutRowsRef.current))
+      if (rosterChanged) ops.push(saveRoster(rosterRef.current, savedRoster.current))
+      // workout_history is derived from both workouts and roster.
+      if (workoutsChanged || rosterChanged) ops.push(saveWorkoutHistory(workoutRowsRef.current, rosterRef.current))
+      if (plansChanged) ops.push(savePlanTemplates(planTemplatesRef.current))
+      if (settingsChanged) ops.push(saveSettings({
+        // Preserve hidden fields from the initial data load (we don't expose
+        // these in any tab, but we mustn't clobber them on every save).
+        preRunRoutine: data.preRunRoutine,
+        postRunRoutine: data.postRunRoutine,
+        publishStatus: data.publishStatus,
+        timezone: settingsRef.current.timezone,
+        videoLabel: settingsRef.current.videoLabel,
+        videoUrl: settingsRef.current.videoUrl,
+        coaches: settingsRef.current.coaches,
+      }))
+      await Promise.all(ops)
+      savedSnapshot.current = cur
+      // Advance the roster baseline so the next diff is against what's now persisted.
+      if (rosterChanged) savedRoster.current = rosterRef.current
       setSavedAt(new Date())
       onSaved()
     } catch (err) {
@@ -2871,6 +2898,14 @@ export function CoachDashboard({
   useEffect(() => {
     if (!mountedRef.current) {
       mountedRef.current = true
+      // Baseline snapshot = the freshly-loaded state, so the first edit only
+      // saves the slice the coach actually touched.
+      savedSnapshot.current = {
+        workouts: JSON.stringify(workoutRowsRef.current),
+        roster: JSON.stringify(rosterRef.current),
+        plans: JSON.stringify(planTemplatesRef.current),
+        settings: JSON.stringify(settingsRef.current),
+      }
       return
     }
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
