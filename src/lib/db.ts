@@ -452,8 +452,10 @@ export async function fetchCourseAssignments(): Promise<CourseAssignment[]> {
 // Athletes excluded from leaderboards (bad athletic.net data). Their rows stay
 // in xc_results but are filtered out of leaderboards.
 export async function fetchExcludedAthletes(): Promise<{ athleteId: string; name: string }[]> {
+  // Optional table — if it hasn't been created yet, treat as no exclusions
+  // rather than breaking the whole Stats view.
   const { data, error } = await supabase.from('xc_excluded_athletes').select('athlete_id, name')
-  if (error) throw new Error(error.message)
+  if (error) return []
   return (data ?? []).map(r => ({ athleteId: r.athlete_id, name: r.name ?? '' }))
 }
 
