@@ -126,6 +126,19 @@ async function writeCourses(courses: Course[], assignments: Assignment[], res: V
   return res.json({ ok: true })
 }
 
+// ── excluded athletes (bad athletic.net data) ─────────────────────────────────
+type Excluded = { athleteId: string; name?: string; reason?: string }
+
+async function writeExcluded(list: Excluded[], res: VercelResponse) {
+  const del = await sbFetch('xc_excluded_athletes?athlete_id=not.is.null', { method: 'DELETE' })
+  if (!del.ok) return res.status(500).json({ error: await del.text() })
+  const rows = list.filter(e => e.athleteId).map(e => ({ athlete_id: e.athleteId, name: e.name ?? null, reason: e.reason ?? null }))
+  if (rows.length === 0) return res.json({ ok: true })
+  const ins = await sbFetch('xc_excluded_athletes', { method: 'POST', body: JSON.stringify(rows) })
+  if (!ins.ok) return res.status(500).json({ error: await ins.text() })
+  return res.json({ ok: true })
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store')
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -133,7 +146,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const token = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '').trim()
   if (!(await authorizedCoachEmail(token))) return res.status(403).json({ error: 'Not authorized' })
 
-  const body = req.body as { resource?: string; templates?: PlanTemplate[]; courses?: Course[]; assignments?: Assignment[] }
+  const body = req.body as { resource?: string; templates?: PlanTemplate[]; courses?: Course[]; assignments?: Assignment[]; excluded?: Excluded[] }
   switch (body.resource) {
     case 'plan-templates':
       if (!Array.isArray(body.templates)) return res.status(400).json({ error: 'Missing templates' })
@@ -141,6 +154,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     case 'courses':
       if (!Array.isArray(body.courses) || !Array.isArray(body.assignments)) return res.status(400).json({ error: 'Missing courses/assignments' })
       return writeCourses(body.courses, body.assignments, res)
+    case 'excluded':
+      if (!Array.isArray(body.excluded)) return res.status(400).json({ error: 'Missing excluded' })
+      return writeExcluded(body.excluded, res)
     default:
       return res.status(400).json({ error: 'Unknown resource' })
   }

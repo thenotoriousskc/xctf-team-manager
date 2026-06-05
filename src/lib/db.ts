@@ -449,6 +449,29 @@ export async function fetchCourseAssignments(): Promise<CourseAssignment[]> {
   }))
 }
 
+// Athletes excluded from leaderboards (bad athletic.net data). Their rows stay
+// in xc_results but are filtered out of leaderboards.
+export async function fetchExcludedAthletes(): Promise<{ athleteId: string; name: string }[]> {
+  const { data, error } = await supabase.from('xc_excluded_athletes').select('athlete_id, name')
+  if (error) throw new Error(error.message)
+  return (data ?? []).map(r => ({ athleteId: r.athlete_id, name: r.name ?? '' }))
+}
+
+export async function saveExcludedAthletes(list: { athleteId: string; name: string }[]) {
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+  if (!token) throw new Error('Not signed in — cannot save exclusions')
+  const res = await fetch('/api/coach-write', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ resource: 'excluded', excluded: list }),
+  })
+  if (!res.ok) {
+    const msg = await res.text().catch(() => '')
+    throw new Error(`Exclusion save failed (${res.status}): ${msg}`)
+  }
+}
+
 // Coach-gated write (RLS denies anon writes to courses/course_assignments).
 // Full-replace of both sets — courses are coach-only/single-editor, so the
 // concurrent-clobber concern that bit the roster doesn't apply here.

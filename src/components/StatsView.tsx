@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import type { User } from '@supabase/supabase-js'
 import type { Course, CourseAssignment, XcResult } from '../lib/types.ts'
-import { fetchXcResults, fetchCourses, fetchCourseAssignments, saveCourses } from '../lib/db.ts'
+import { fetchXcResults, fetchCourses, fetchCourseAssignments, saveCourses, fetchExcludedAthletes, saveExcludedAthletes } from '../lib/db.ts'
 import { raceKey, suggestCourses, type Race } from '../lib/courses.ts'
 import { SCHOOL_LOGO } from '../config.ts'
 
@@ -17,6 +17,8 @@ export function StatsView({ user, onBack, onSignOut }: { user: User; onBack: () 
   const [courses, setCourses] = useState<Course[]>([])
   // raceKey -> courseId (null/absent = unassigned)
   const [assign, setAssign] = useState<Record<string, string | null>>({})
+  // Athletes hidden from leaderboards (bad athletic.net data).
+  const [excluded, setExcluded] = useState<{ athleteId: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<Date | null>(null)
@@ -24,13 +26,14 @@ export function StatsView({ user, onBack, onSignOut }: { user: User; onBack: () 
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
-    Promise.all([fetchXcResults(), fetchCourses(), fetchCourseAssignments()])
-      .then(([res, crs, asg]) => {
+    Promise.all([fetchXcResults(), fetchCourses(), fetchCourseAssignments(), fetchExcludedAthletes()])
+      .then(([res, crs, asg, exc]) => {
         setResults(res)
         setCourses(crs)
         const m: Record<string, string | null> = {}
         for (const a of asg) m[a.raceKey] = a.courseId
         setAssign(m)
+        setExcluded(exc)
       })
       .catch(e => setError(e instanceof Error ? e.message : 'Load failed'))
       .finally(() => setLoading(false))
@@ -84,6 +87,15 @@ export function StatsView({ user, onBack, onSignOut }: { user: User; onBack: () 
     setDirty(true)
   }
 
+  const excludeAthlete = (athleteId: string, name: string) => {
+    setExcluded(ex => ex.some(e => e.athleteId === athleteId) ? ex : [...ex, { athleteId, name }])
+    setDirty(true)
+  }
+  const restoreAthlete = (athleteId: string) => {
+    setExcluded(ex => ex.filter(e => e.athleteId !== athleteId))
+    setDirty(true)
+  }
+
   const handleSave = useCallback(async () => {
     setSaving(true)
     setError(null)
@@ -97,6 +109,7 @@ export function StatsView({ user, onBack, onSignOut }: { user: User; onBack: () 
       const usedIds = new Set(assignments.map(a => a.courseId))
       const keepCourses = courses.filter(c => c.name.trim() || usedIds.has(c.id))
       await saveCourses(keepCourses, assignments)
+      await saveExcludedAthletes(excluded)
       setCourses(keepCourses)
       setSavedAt(new Date())
       setDirty(false)
@@ -105,7 +118,7 @@ export function StatsView({ user, onBack, onSignOut }: { user: User; onBack: () 
     } finally {
       setSaving(false)
     }
-  }, [races, assign, courses])
+  }, [races, assign, courses, excluded])
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -152,7 +165,14 @@ export function StatsView({ user, onBack, onSignOut }: { user: User; onBack: () 
           onSetRaceCourse={setRaceCourse}
         />
       ) : (
-        <LeaderboardsTab results={results} courses={courses} assign={assign} />
+        <LeaderboardsTab
+          results={results}
+          courses={courses}
+          assign={assign}
+          excluded={excluded}
+          onExclude={excludeAthlete}
+          onRestore={restoreAthlete}
+        />
       )}
     </div>
   )
@@ -337,15 +357,19 @@ function CoursesTab({
 }
 
 // ─── Leaderboards tab ───────────────────────────────────────────────────────
-function LeaderboardsTab({ results, courses, assign }: {
+function LeaderboardsTab({ results, courses, assign, excluded, onExclude, onRestore }: {
   results: XcResult[]
   courses: Course[]
   assign: Record<string, string | null>
+  excluded: { athleteId: string; name: string }[]
+  onExclude: (athleteId: string, name: string) => void
+  onRestore: (athleteId: string) => void
 }) {
   const namedCourses = courses.filter(c => c.name.trim())
   const [courseId, setCourseId] = useState<string>(namedCourses[0]?.id ?? '')
   const [gender, setGender] = useState<'all' | 'M' | 'F'>('all')
   const [season, setSeason] = useState<string>('all')
+  const excludedIds = useMemo(() => new Set(excluded.map(e => e.athleteId)), [excluded])
 
   // Results whose race is assigned to the selected course.
   const courseResults = useMemo(
@@ -357,10 +381,12 @@ function LeaderboardsTab({ results, courses, assign }: {
     [courseResults],
   )
 
-  // Best (lowest seconds) result per athlete, after gender/season filter.
+  // Best (lowest seconds) result per athlete, after gender/season filter and
+  // dropping excluded athletes (bad athletic.net data).
   const leaderboard = useMemo(() => {
     const best = new Map<string, XcResult>()
     for (const r of courseResults) {
+      if (excludedIds.has(r.athleteId)) continue
       if (gender !== 'all' && r.gender !== gender) continue
       if (season !== 'all' && r.season !== season) continue
       if (r.markSeconds == null) continue
@@ -368,7 +394,7 @@ function LeaderboardsTab({ results, courses, assign }: {
       if (!cur || (cur.markSeconds ?? Infinity) > r.markSeconds) best.set(r.athleteId, r)
     }
     return [...best.values()].sort((a, b) => (a.markSeconds ?? 0) - (b.markSeconds ?? 0))
-  }, [courseResults, gender, season])
+  }, [courseResults, gender, season, excludedIds])
 
   if (namedCourses.length === 0) {
     return <div className="max-w-4xl mx-auto p-8 text-center text-gray-400 text-sm">Define and assign courses first (Courses tab).</div>
@@ -401,25 +427,46 @@ function LeaderboardsTab({ results, courses, assign }: {
               <th className="px-3 py-2 text-center w-12">Gr</th>
               <th className="px-3 py-2 text-left">Season</th>
               <th className="px-3 py-2 text-left hidden sm:table-cell">Meet</th>
+              <th className="px-3 py-2 w-8"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {leaderboard.map((r, i) => (
-              <tr key={r.athleteId} className="hover:bg-slate-50">
+              <tr key={r.athleteId} className="hover:bg-slate-50 group">
                 <td className="px-3 py-1.5 text-right text-gray-400">{i + 1}</td>
                 <td className="px-3 py-1.5 font-medium text-gray-800">{r.athleteName}</td>
                 <td className="px-3 py-1.5 text-right font-mono">{r.mark}</td>
                 <td className="px-3 py-1.5 text-center text-gray-500">{r.grade ?? ''}</td>
                 <td className="px-3 py-1.5 text-gray-500">{r.season}</td>
                 <td className="px-3 py-1.5 text-gray-500 hidden sm:table-cell truncate max-w-[16rem]">{r.meet}</td>
+                <td className="px-2 py-1.5 text-right">
+                  <button
+                    onClick={() => { if (confirm(`Exclude ${r.athleteName} from all leaderboards? (bad athletic.net data)`)) onExclude(r.athleteId, r.athleteName) }}
+                    title="Exclude from leaderboards"
+                    className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"
+                  >✕</button>
+                </td>
               </tr>
             ))}
             {leaderboard.length === 0 && (
-              <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400">No results for this filter.</td></tr>
+              <tr><td colSpan={7} className="px-3 py-6 text-center text-gray-400">No results for this filter.</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {excluded.length > 0 && (
+        <div className="text-xs text-gray-500">
+          <span className="font-medium">Excluded from leaderboards:</span>{' '}
+          {excluded.map(e => (
+            <span key={e.athleteId} className="inline-flex items-center gap-1 mr-2">
+              {e.name || e.athleteId}
+              <button onClick={() => onRestore(e.athleteId)} className="text-blue-500 hover:text-blue-700" title="Restore">↺</button>
+            </span>
+          ))}
+          <span className="text-gray-400">· remember to Save</span>
+        </div>
+      )}
     </div>
   )
 }
