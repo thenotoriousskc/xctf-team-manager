@@ -214,15 +214,23 @@ function CoursesTab({
                       defaultValue=""
                       onChange={e => {
                         const v = e.target.value
-                        if (!v) return
-                        const cid = v === '__new__' ? onAddCourse({ name: s.label.replace(/ ~.*$/, ''), distanceLabel: s.label.match(/~(.+)$/)?.[1] ?? '' }) : v
-                        onAssignSuggestion(s.races, cid)
                         e.target.value = ''
+                        if (!v) return
+                        let cid: string
+                        if (v === '__new__') {
+                          const suggested = s.label.replace(/ ~.*$/, '')
+                          const name = window.prompt('Name this course:', suggested)
+                          if (name === null) return // cancelled
+                          cid = onAddCourse({ name: name.trim() || suggested, distanceLabel: s.label.match(/~(.+)$/)?.[1] ?? '' })
+                        } else {
+                          cid = v
+                        }
+                        onAssignSuggestion(s.races, cid)
                       }}
                       className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
                     >
                       <option value="">Assign to…</option>
-                      <option value="__new__">+ New course from this group</option>
+                      <option value="__new__">+ New course from this group…</option>
                       {courses.filter(c => c.name.trim()).map(c => (
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
