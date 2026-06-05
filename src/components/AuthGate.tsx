@@ -1,14 +1,21 @@
+import type { ReactNode } from 'react'
+import type { User } from '@supabase/supabase-js'
 import { useAuth } from '../hooks/useAuth.ts'
 import type { SheetData } from '../lib/types.ts'
 import { isAuthorizedCoach } from '../lib/coaches.ts'
 import { CoachDashboard } from './CoachDashboard.tsx'
 
-export function AuthGate({
-  data, onBack, onSaved,
+// Coach-only gate: handles loading / unauthorized / sign-in, then renders its
+// children with the authenticated user. Used for both the coach dashboard and
+// the Stats area.
+export function CoachGate({
+  data, onBack, title = 'Coach', returnView = 'coach-dashboard', children,
 }: {
   data: SheetData
   onBack: () => void
-  onSaved: () => void
+  title?: string
+  returnView?: string
+  children: (user: User, signOut: () => void) => ReactNode
 }) {
   const { user, loading, signIn, signOut } = useAuth()
 
@@ -35,12 +42,12 @@ export function AuthGate({
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-6">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-navy-900 mb-2">Coach Dashboard</h1>
-          <p className="text-gray-500 text-sm">Sign in with your Google account to manage workouts.</p>
+          <h1 className="text-2xl font-bold text-navy-900 mb-2">{title}</h1>
+          <p className="text-gray-500 text-sm">Sign in with your Google account to continue.</p>
         </div>
         <button
           onClick={() => {
-            sessionStorage.setItem('xctf-return-view', 'coach-dashboard')
+            sessionStorage.setItem('xctf-return-view', returnView)
             signIn()
           }}
           className="flex items-center gap-3 px-6 py-3 bg-white border border-gray-300 rounded-xl shadow-sm hover:shadow-md transition-shadow text-sm font-medium text-gray-700"
@@ -60,13 +67,22 @@ export function AuthGate({
     )
   }
 
+  return <>{children(user, signOut)}</>
+}
+
+// Back-compat wrapper for the coach dashboard.
+export function AuthGate({
+  data, onBack, onSaved,
+}: {
+  data: SheetData
+  onBack: () => void
+  onSaved: () => void
+}) {
   return (
-    <CoachDashboard
-      user={user}
-      data={data}
-      onBack={onBack}
-      onSaved={onSaved}
-      onSignOut={signOut}
-    />
+    <CoachGate data={data} onBack={onBack} title="Coach Dashboard" returnView="coach-dashboard">
+      {(user, signOut) => (
+        <CoachDashboard user={user} data={data} onBack={onBack} onSaved={onSaved} onSignOut={signOut} />
+      )}
+    </CoachGate>
   )
 }

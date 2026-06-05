@@ -7,13 +7,14 @@ import { AthletePicker } from './components/AthletePicker.tsx'
 import { WorkoutCard } from './components/WorkoutCard.tsx'
 import { OffseasonCard } from './components/OffseasonCard.tsx'
 import { PrintView } from './components/PrintView.tsx'
-import { AuthGate } from './components/AuthGate.tsx'
+import { AuthGate, CoachGate } from './components/AuthGate.tsx'
+import { StatsView } from './components/StatsView.tsx'
 import { LoadingSpinner, ErrorDisplay } from './components/LoadingSpinner.tsx'
 import { HelpPage } from './components/HelpPage.tsx'
 import { BioPage } from './components/BioPage.tsx'
 import { TEAM_NAME, SCHOOL_LOGO } from './config.ts'
 
-type View = 'athlete' | 'coach-dashboard' | 'print'
+type View = 'athlete' | 'coach-dashboard' | 'coach-stats' | 'print'
 
 // Detect if we're returning from a Strava per-athlete OAuth
 const _searchParams = new URLSearchParams(window.location.search)
@@ -45,9 +46,10 @@ function BiosRoute() {
   )
 }
 
-function HamburgerMenu({ onRefresh, onEdit, onPrint, user, onSignIn, onSignOut, authLoading }: {
+function HamburgerMenu({ onRefresh, onEdit, onStats, onPrint, user, onSignIn, onSignOut, authLoading }: {
   onRefresh: () => void
   onEdit: () => void
+  onStats: () => void
   onPrint: () => void
   user: ReturnType<typeof useAuth>['user']
   onSignIn: () => void
@@ -88,7 +90,13 @@ function HamburgerMenu({ onRefresh, onEdit, onPrint, user, onSignIn, onSignOut, 
             <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
-            Edit
+            Coach
+          </button>
+          <button onClick={() => { onStats(); setOpen(false) }} className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-3">
+            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            Stats
           </button>
           <button onClick={() => { onPrint(); setOpen(false) }} className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-3">
             <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -179,7 +187,7 @@ export default function App() {
       return saved
     }
     const urlView = new URLSearchParams(window.location.search).get('view') as View | null
-    if (urlView && ['coach-dashboard', 'print'].includes(urlView)) return urlView
+    if (urlView && ['coach-dashboard', 'coach-stats', 'print'].includes(urlView)) return urlView
     return 'athlete'
   })
 
@@ -210,7 +218,7 @@ export default function App() {
       if (state?.view) setView(state.view)
       else {
         const urlView = params.get('view') as View | null
-        setView(urlView && ['coach-dashboard', 'print'].includes(urlView) ? urlView : 'athlete')
+        setView(urlView && ['coach-dashboard', 'coach-stats', 'print'].includes(urlView) ? urlView : 'athlete')
       }
       if ('athlete' in (state ?? {})) {
         setAthleteRef.current(state!.athlete ?? null)
@@ -268,6 +276,21 @@ export default function App() {
     )
   }
 
+  if (view === 'coach-stats') {
+    return (
+      <CoachGate
+        data={data}
+        onBack={() => navigateTo('athlete')}
+        title="Stats"
+        returnView="coach-stats"
+      >
+        {(user, signOut) => (
+          <StatsView user={user} onBack={() => navigateTo('athlete')} onSignOut={signOut} />
+        )}
+      </CoachGate>
+    )
+  }
+
   // Athlete picker
   if (!selectedAthlete) {
     return (
@@ -297,6 +320,7 @@ export default function App() {
             <HamburgerMenu
               onRefresh={refresh}
               onEdit={() => navigateTo('coach-dashboard')}
+              onStats={() => navigateTo('coach-stats')}
               onPrint={() => navigateTo('print')}
               user={user}
               onSignIn={signIn}

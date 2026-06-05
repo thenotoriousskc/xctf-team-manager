@@ -30,13 +30,17 @@ from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 
 
-def make_driver(headless=False):
+def make_driver(headless=False, version_main=None):
     options = uc.ChromeOptions()
     if headless:
         options.add_argument('--headless=new')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    return uc.Chrome(options=options, version_main=147)
+    # Don't hard-pin the Chrome major version — let undetected_chromedriver match
+    # whatever Chrome is installed (Chrome auto-updates; pinning breaks on every
+    # bump). Pass --chrome-version only if auto-detection ever misfires.
+    kwargs = {'version_main': version_main} if version_main else {}
+    return uc.Chrome(options=options, **kwargs)
 
 
 def get_page(driver, url, wait_seconds=4):
@@ -201,9 +205,10 @@ def main():
     parser.add_argument('--out', type=str, default='prs.json')
     parser.add_argument('--athlete_id', type=str, help='Single athlete ID for testing')
     parser.add_argument('--headless', action='store_true', help='Run headless (may be blocked by Cloudflare)')
+    parser.add_argument('--chrome-version', type=int, default=None, help='Pin Chrome major version (default: auto-detect)')
     args = parser.parse_args()
 
-    driver = make_driver(headless=args.headless)
+    driver = make_driver(headless=args.headless, version_main=args.chrome_version)
     results = {}
 
     try:

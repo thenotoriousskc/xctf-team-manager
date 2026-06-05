@@ -1,5 +1,5 @@
 import { supabase } from './supabase.ts'
-import type { WorkoutRow, RosterEntry, SheetData, PublishStatus, WorkoutSegment, WorkoutHistoryEntry, DayHistoryGroup, PlanTemplate, PlanDay } from './types.ts'
+import type { WorkoutRow, RosterEntry, SheetData, PublishStatus, WorkoutSegment, WorkoutHistoryEntry, DayHistoryGroup, PlanTemplate, PlanDay, Course, CourseAssignment, XcResult } from './types.ts'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -384,5 +384,86 @@ export async function savePlanTemplates(templates: PlanTemplate[]) {
   if (!res.ok) {
     const msg = await res.text().catch(() => '')
     throw new Error(`Plan template save failed (${res.status}): ${msg}`)
+  }
+}
+
+// ─── Courses / XC results ──────────────────────────────────────────────────
+
+// Pull every XC result, paginating past PostgREST's 1000-row cap.
+export async function fetchXcResults(): Promise<XcResult[]> {
+  const out: XcResult[] = []
+  const BATCH = 1000
+  for (let from = 0; ; from += BATCH) {
+    const { data, error } = await supabase
+      .from('xc_results')
+      .select('athlete_id, athlete_name, gender, event, mark, mark_seconds, season, grade, place, race_date, meet, is_pb')
+      .order('mark_seconds', { ascending: true })
+      .range(from, from + BATCH - 1)
+    if (error) throw new Error(error.message)
+    const rows = data ?? []
+    out.push(...rows.map(r => ({
+      athleteId: r.athlete_id,
+      athleteName: r.athlete_name ?? '',
+      gender: r.gender ?? null,
+      event: r.event ?? '',
+      mark: r.mark ?? '',
+      markSeconds: r.mark_seconds != null ? Number(r.mark_seconds) : null,
+      season: r.season ?? '',
+      grade: r.grade != null ? Number(r.grade) : null,
+      place: r.place != null ? Number(r.place) : null,
+      raceDate: r.race_date ?? null,
+      meet: r.meet ?? '',
+      isPb: !!r.is_pb,
+    })))
+    if (rows.length < BATCH) break
+  }
+  return out
+}
+
+export async function fetchCourses(): Promise<Course[]> {
+  const { data, error } = await supabase
+    .from('courses')
+    .select('id, name, location, distance_label, notes')
+    .order('name')
+  if (error) throw new Error(error.message)
+  return (data ?? []).map(r => ({
+    id: r.id,
+    name: r.name ?? '',
+    location: r.location ?? '',
+    distanceLabel: r.distance_label ?? '',
+    notes: r.notes ?? '',
+  }))
+}
+
+export async function fetchCourseAssignments(): Promise<CourseAssignment[]> {
+  const { data, error } = await supabase
+    .from('course_assignments')
+    .select('race_key, meet, season, event, course_id')
+  if (error) throw new Error(error.message)
+  return (data ?? []).map(r => ({
+    raceKey: r.race_key,
+    meet: r.meet ?? '',
+    season: r.season ?? '',
+    event: r.event ?? '',
+    courseId: r.course_id ?? null,
+  }))
+}
+
+// Coach-gated write (RLS denies anon writes to courses/course_assignments).
+// Full-replace of both sets — courses are coach-only/single-editor, so the
+// concurrent-clobber concern that bit the roster doesn't apply here.
+export async function saveCourses(courses: Course[], assignments: CourseAssignment[]) {
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+  if (!token) throw new Error('Not signed in — cannot save courses')
+
+  const res = await fetch('/api/courses', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ courses, assignments }),
+  })
+  if (!res.ok) {
+    const msg = await res.text().catch(() => '')
+    throw new Error(`Course save failed (${res.status}): ${msg}`)
   }
 }

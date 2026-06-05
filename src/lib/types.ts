@@ -110,6 +110,40 @@ export interface DayHistoryGroup {
 
 export type PublishStatus = 'PUBLISH' | 'UPDATING'
 
+// A coach-defined physical course; XC leaderboards rank within one.
+export interface Course {
+  id: string
+  name: string
+  location: string
+  distanceLabel: string
+  notes: string
+}
+
+// Maps one race (meet+season+event) to a course. Unassigned races have no row.
+export interface CourseAssignment {
+  raceKey: string
+  meet: string
+  season: string
+  event: string
+  courseId: string | null
+}
+
+// One scraped XC race result (from the xc_results table).
+export interface XcResult {
+  athleteId: string
+  athleteName: string
+  gender: string | null
+  event: string
+  mark: string
+  markSeconds: number | null
+  season: string
+  grade: number | null
+  place: number | null
+  raceDate: string | null
+  meet: string
+  isPb: boolean
+}
+
 export interface SheetData {
   preRunRoutine: string
   postRunRoutine: string

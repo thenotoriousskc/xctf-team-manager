@@ -76,13 +76,17 @@ def load_env_local():
             os.environ.setdefault(key, val)
 
 
-def make_driver(headless=False):
+def make_driver(headless=False, version_main=None):
     options = uc.ChromeOptions()
     if headless:
         options.add_argument('--headless=new')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    return uc.Chrome(options=options, version_main=147)
+    # Don't hard-pin the Chrome major version — let undetected_chromedriver match
+    # whatever Chrome is installed (Chrome auto-updates; pinning breaks on every
+    # bump). Pass --chrome-version only if auto-detection ever misfires.
+    kwargs = {'version_main': version_main} if version_main else {}
+    return uc.Chrome(options=options, **kwargs)
 
 
 def get_page(driver, url, wait_seconds=4):
@@ -471,6 +475,7 @@ def main():
     parser.add_argument('--dump_team', type=int, metavar='YEAR', help='Load one season team page and print the roster found, then exit (verify season URL)')
     parser.add_argument('--limit', type=int, help='Cap number of athletes (testing)')
     parser.add_argument('--headless', action='store_true')
+    parser.add_argument('--chrome-version', type=int, default=None, help='Pin Chrome major version (default: auto-detect)')
     parser.add_argument('--login', action='store_true', help='Log in to athletic.net first (unlocks per-meet times for all past seasons). Uses ATHLETICNET_EMAIL/PASSWORD, else prompts for manual login.')
     parser.add_argument('--supabase', action='store_true', help='Also upsert results into the xc_results table')
     args = parser.parse_args()
@@ -481,7 +486,7 @@ def main():
     if args.login and args.headless and not have_creds:
         parser.error('manual login needs a visible browser; set ATHLETICNET_EMAIL/PASSWORD or drop --headless')
 
-    driver = make_driver(headless=args.headless)
+    driver = make_driver(headless=args.headless, version_main=args.chrome_version)
     results = {}
 
     try:
