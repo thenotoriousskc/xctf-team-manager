@@ -87,7 +87,7 @@ export function HelpPage() {
 
         <Section title="For Coaches">
           <Q q="How do I access the dashboard?">
-            From the main screen tap <strong>Edit</strong>, then sign in with your Google account. Your email must be on the authorized coaches list.
+            From the main screen open the menu and tap <strong>Coach</strong> (workouts, roster, mileage) or <strong>Stats</strong> (course leaderboards), then sign in with your Google account. Your email must be on the authorized coaches list.
           </Q>
           <Q q="Changes aren't saving.">
             Look for the "Saved" indicator in the dashboard header. If it shows an error, tap it to retry. Check your internet connection.
