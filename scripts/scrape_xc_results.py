@@ -426,46 +426,50 @@ def slug(s: str) -> str:
     return re.sub(r'[^a-z0-9]+', '-', (s or '').lower()).strip('-')
 
 
-def push_to_supabase(results: dict):
+def supabase_creds():
+    """(url, key) if Supabase upload is possible, else (None, None)."""
     if requests is None:
         print('SKIP supabase: `requests` not installed (pip install requests)')
-        return
+        return None, None
     url = os.environ.get('SUPABASE_URL')
     key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
     if not url or not key:
         print('SKIP supabase: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set')
-        return
+        return None, None
+    return url, key
 
+
+def build_rows(athlete_id: str, data: dict) -> list[dict]:
+    name = data.get('name', '')
+    gender = data.get('gender')
     rows = []
-    for athlete_id, data in results.items():
-        name = data.get('name', '')
-        gender = data.get('gender')
-        for h in data.get('history', []):  # one row per race
-            secs = mark_to_secs(h['mark'])
-            rows.append({
-                # deterministic key -> re-runs upsert in place, no duplicates
-                'result_key': f"{athlete_id}:{slug(h['event'])}:{h.get('race_date') or h['season']}:{h['mark']}:{h.get('place', '')}",
-                'athlete_id': athlete_id,
-                'athlete_name': name,
-                'gender': gender,
-                'event': h['event'],
-                'mark': h['mark'],
-                'mark_seconds': None if secs == float('inf') else round(secs, 2),
-                'season': h['season'],
-                'grade': h.get('grade'),
-                'place': h.get('place'),
-                'date': h.get('date'),
-                'race_date': h.get('race_date'),
-                'meet': h.get('meet'),
-                'heat': h.get('heat'),
-                'school': h.get('school'),
-                'is_pb': bool(h.get('is_pb')),
-            })
+    for h in data.get('history', []):  # one row per race
+        secs = mark_to_secs(h['mark'])
+        rows.append({
+            # deterministic key -> re-runs upsert in place, no duplicates
+            'result_key': f"{athlete_id}:{slug(h['event'])}:{h.get('race_date') or h['season']}:{h['mark']}:{h.get('place', '')}",
+            'athlete_id': athlete_id,
+            'athlete_name': name,
+            'gender': gender,
+            'event': h['event'],
+            'mark': h['mark'],
+            'mark_seconds': None if secs == float('inf') else round(secs, 2),
+            'season': h['season'],
+            'grade': h.get('grade'),
+            'place': h.get('place'),
+            'date': h.get('date'),
+            'race_date': h.get('race_date'),
+            'meet': h.get('meet'),
+            'heat': h.get('heat'),
+            'school': h.get('school'),
+            'is_pb': bool(h.get('is_pb')),
+        })
+    return rows
 
+
+def upsert_rows(rows: list[dict], url: str, key: str) -> int:
     if not rows:
-        print('No rows to push to Supabase.')
-        return
-
+        return 0
     headers = {
         'Content-Type': 'application/json',
         'apikey': key,
@@ -477,10 +481,10 @@ def push_to_supabase(results: dict):
         batch = rows[i:i + 500]
         r = requests.post(f'{url}/rest/v1/xc_results', headers=headers, data=json.dumps(batch))
         if not r.ok:
-            print(f'  Supabase batch {i} failed {r.status_code}: {r.text[:300]}')
+            print(f'  Supabase upsert failed {r.status_code}: {r.text[:300]}')
             break
         pushed += len(batch)
-    print(f'Upserted {pushed}/{len(rows)} rows into xc_results')
+    return pushed
 
 
 def main():
@@ -540,24 +544,46 @@ def main():
             if args.limit:
                 athletes = dict(list(athletes.items())[:args.limit])
 
+        url, key = supabase_creds() if args.supabase else (None, None)
+        do_upload = bool(args.supabase and url and key)
+
+        # Resume: load any athletes already scraped in a prior (crashed) run so
+        # we skip re-scraping them. Re-sync them to Supabase first in case the
+        # table was truncated since.
+        if os.path.exists(args.out):
+            try:
+                with open(args.out) as f:
+                    results = json.load(f)
+                print(f'Resuming — {len(results)} athletes already in {args.out}')
+                if do_upload:
+                    synced = sum(upsert_rows(build_rows(aid, d), url, key) for aid, d in results.items())
+                    print(f'  re-synced {synced} rows to Supabase')
+            except Exception as e:
+                print(f'Could not read {args.out} ({e}); starting fresh')
+                results = {}
+
         for athlete_id, info in athletes.items():
+            if athlete_id in results:
+                print(f'  skip {info["name"]} ({athlete_id}) — already scraped')
+                continue
             resolved, prs, history, seasons = get_athlete_xc(driver, athlete_id, info['name'], team_school=team_school, dump=args.dump)
             if args.dump:
                 return
             results[athlete_id] = {'name': resolved, 'gender': info.get('gender'),
                                    'prs': prs, 'history': history, 'seasons': seasons}
+            # Persist incrementally so a mid-run crash keeps progress.
+            with open(args.out, 'w') as f:
+                json.dump(results, f, indent=2)
+            if do_upload:
+                n = upsert_rows(build_rows(athlete_id, results[athlete_id]), url, key)
+                print(f'    upserted {n} rows')
             delay = random.uniform(10, 60)
             print(f'    Waiting {delay:.1f}s...')
             time.sleep(delay)
     finally:
         driver.quit()
 
-    with open(args.out, 'w') as f:
-        json.dump(results, f, indent=2)
-    print(f'\nWrote {len(results)} athletes to {args.out}')
-
-    if args.supabase:
-        push_to_supabase(results)
+    print(f'\nDone — {len(results)} athletes in {args.out}')
 
 
 if __name__ == '__main__':
