@@ -4,6 +4,7 @@ import { SCHOOL_LOGO } from '../config.ts'
 import { useAthleticNetPRs } from '../hooks/useAthleticNetPRs.ts'
 import { effectivePaces, computeTempoPace } from '../lib/vdot.ts'
 import { ManualMileagePanel } from './ManualMileagePanel.tsx'
+import { StravaConnectButton } from './StravaConnectButton.tsx'
 
 // Date math in the team's configured timezone. UTC slicing made evening
 // entries land on the wrong calendar day for week-boundary comparisons.
@@ -261,6 +262,25 @@ export function OffseasonCard({
   const assignedTemplate = rosterEntry?.planTemplateId
     ? planTemplates.find(t => t.id === rosterEntry.planTemplateId) ?? null
     : null
+  // Viewer is this athlete (their email is bound to this roster row) — only
+  // they may connect Strava, since the token is stored under their name.
+  const isSelf = !!signedInAs && !!rosterEntry?.email
+    && rosterEntry.email.toLowerCase() === signedInAs.toLowerCase()
+
+  // Whether this athlete already has Strava connected (WorkoutCard gets this for
+  // free from its mileage widget; the offseason card has no widget, so check it
+  // directly to decide whether to show the connect prompt).
+  const [stravaConnected, setStravaConnected] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (!isSelf) return
+    let cancelled = false
+    fetch(`/api/strava/athlete-mileage?athlete=${encodeURIComponent(athleteName)}`)
+      .then(r => r.json())
+      .then(d => { if (!cancelled) setStravaConnected(!(d.connected === false || d.error || d.miles === undefined)) })
+      .catch(() => { if (!cancelled) setStravaConnected(false) })
+    return () => { cancelled = true }
+  }, [athleteName, isSelf])
+
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-navy-900 text-white px-4 py-4 flex items-center justify-between">
@@ -279,6 +299,12 @@ export function OffseasonCard({
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-6 space-y-4">
+        {isAuthenticated && isSelf && stravaConnected === false && (
+          <div className="bg-white rounded-xl p-4">
+            <StravaConnectButton athleteName={athleteName} />
+          </div>
+        )}
+
         {rosterEntry?.manualMileage && (
           <ManualMileagePanel
             athleteName={athleteName}

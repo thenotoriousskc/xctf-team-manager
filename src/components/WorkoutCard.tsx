@@ -11,6 +11,7 @@ import { AthleticNetPRs } from './AthleticNetPRs.tsx'
 import { OffseasonProgressPanel, WeeklyPlanPanel } from './OffseasonCard.tsx'
 import type { PlanTemplate } from '../lib/types.ts'
 import { ManualMileagePanel } from './ManualMileagePanel.tsx'
+import { StravaConnectButton } from './StravaConnectButton.tsx'
 
 const URL_REGEX = /(https?:\/\/[^\s]+)/g
 
@@ -211,19 +212,6 @@ export function WorkoutCard({
   // athlete's name, so a coach viewing someone else's card must not connect.
   const isSelf = !!signedInAs && !!rosterEntry?.email
     && rosterEntry.email.toLowerCase() === signedInAs.toLowerCase()
-
-  // One-time status from the Strava connect redirect (?strava_athlete=...).
-  // Read once, then strip from the URL so it doesn't persist on refresh.
-  const [stravaConnectMsg] = useState<'connected' | 'error' | 'limit' | null>(() => {
-    const p = new URLSearchParams(window.location.search).get('strava_athlete')
-    return p === 'connected' || p === 'error' || p === 'limit' ? p : null
-  })
-  useEffect(() => {
-    if (!stravaConnectMsg) return
-    const params = new URLSearchParams(window.location.search)
-    params.delete('strava_athlete')
-    window.history.replaceState(null, '', `${window.location.pathname}${params.toString() ? `?${params}` : ''}`)
-  }, [stravaConnectMsg])
 
   useEffect(() => {
     fetchAthleteHistory(athleteName).then(setHistory).catch(() => {})
@@ -480,23 +468,7 @@ export function WorkoutCard({
                 )}
               </div>
             ) : isSelf ? (
-              <div className="flex flex-col items-center gap-2">
-                {stravaConnectMsg === 'limit' ? (
-                  <p className="text-xs text-center text-amber-600">
-                    The team's Strava connection limit is full. Ask your coach — log your miles manually for now.
-                  </p>
-                ) : stravaConnectMsg === 'error' ? (
-                  <p className="text-xs text-center text-red-500">
-                    Strava couldn't connect. Try again, or log your miles manually.
-                  </p>
-                ) : null}
-                <a
-                  href={`/api/strava/athlete-auth?athlete=${encodeURIComponent(athleteName)}`}
-                  className="block mx-auto w-fit"
-                >
-                  <img src="/btn-strava-connect.svg" alt="Connect with Strava" className="h-12" />
-                </a>
-              </div>
+              <StravaConnectButton athleteName={athleteName} />
             ) : null}
           </div>
         )}
