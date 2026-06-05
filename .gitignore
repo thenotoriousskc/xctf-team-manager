@@ -34,3 +34,7 @@ strava-feed-raw.html
 
 # Supabase CLI local state
 supabase/.temp/
+
+# Python scraper cache + local scrape output
+scripts/__pycache__/
+scripts/xc-results.json
