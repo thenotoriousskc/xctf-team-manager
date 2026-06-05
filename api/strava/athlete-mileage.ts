@@ -2,6 +2,19 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const SUPABASE_URL = process.env.SUPABASE_URL!
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
+// Strava-approved cap on authenticated athletes (mirrors athlete-auth).
+const ATHLETE_LIMIT = 10
+
+// How many athletes currently hold a Strava token. Used to tell the client
+// whether the connect slots are full so it can hide the (would-fail) button.
+async function connectedCount(): Promise<number> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/athlete_strava_tokens?select=athlete_name`, {
+    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
+  })
+  if (!res.ok) return 0
+  const rows = await res.json()
+  return Array.isArray(rows) ? rows.length : 0
+}
 
 function weekBounds(tzOffset: number = -7): { thisWeekStart: number; lastWeekStart: number } {
   const now = new Date()
@@ -163,7 +176,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       lastWeek: Math.round(lastWeekMiles * 10) / 10,
     })
   } catch (err: any) {
-    if (err.message === 'not_connected') return res.json({ miles: null, connected: false })
+    if (err.message === 'not_connected') {
+      const limitFull = (await connectedCount()) >= ATHLETE_LIMIT
+      return res.json({ miles: null, connected: false, limitFull })
+    }
     res.status(500).json({ error: err.message })
   }
 }

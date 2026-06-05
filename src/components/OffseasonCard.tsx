@@ -271,12 +271,17 @@ export function OffseasonCard({
   // free from its mileage widget; the offseason card has no widget, so check it
   // directly to decide whether to show the connect prompt).
   const [stravaConnected, setStravaConnected] = useState<boolean | null>(null)
+  const [stravaLimitFull, setStravaLimitFull] = useState(false)
   useEffect(() => {
     if (!isSelf) return
     let cancelled = false
     fetch(`/api/strava/athlete-mileage?athlete=${encodeURIComponent(athleteName)}`)
       .then(r => r.json())
-      .then(d => { if (!cancelled) setStravaConnected(!(d.connected === false || d.error || d.miles === undefined)) })
+      .then(d => {
+        if (cancelled) return
+        setStravaConnected(!(d.connected === false || d.error || d.miles === undefined))
+        setStravaLimitFull(!!d.limitFull)
+      })
       .catch(() => { if (!cancelled) setStravaConnected(false) })
     return () => { cancelled = true }
   }, [athleteName, isSelf])
@@ -299,12 +304,6 @@ export function OffseasonCard({
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-6 space-y-4">
-        {isAuthenticated && isSelf && stravaConnected === false && (
-          <div className="bg-white rounded-xl p-4">
-            <StravaConnectButton athleteName={athleteName} />
-          </div>
-        )}
-
         {rosterEntry?.manualMileage && (
           <ManualMileagePanel
             athleteName={athleteName}
@@ -325,6 +324,13 @@ export function OffseasonCard({
         )}
 
         <OffseasonProgressPanel athleteName={athleteName} rosterEntry={rosterEntry} timezone={timezone} />
+
+        {/* Connect Strava — at the bottom so it stays out of the way until needed. */}
+        {isAuthenticated && isSelf && stravaConnected === false && (
+          <div className="bg-white rounded-xl p-4">
+            <StravaConnectButton athleteName={athleteName} limitFull={stravaLimitFull} />
+          </div>
+        )}
       </main>
     </div>
   )

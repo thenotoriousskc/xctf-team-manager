@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { waitUntil } from '@vercel/functions'
 
 const SUPABASE_URL = process.env.SUPABASE_URL!
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -122,15 +123,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.redirect(`${APP_URL}?athlete=${encodeURIComponent(athlete)}&strava_athlete=error`)
     }
 
-    // Fetch and save full activity history (best-effort, don't block on failure)
-    try {
-      const activities = await fetchAllActivities(token.access_token)
-      console.log(`Fetched ${activities.length} total activities for ${athlete}`)
-      await saveActivities(activities, athlete, stravaAthleteId)
-      console.log(`Saved history for ${athlete}`)
-    } catch (err) {
-      console.error('History sync failed (non-fatal):', err)
-    }
+    // Back-fill full activity history in the BACKGROUND so the athlete is
+    // redirected back to the app immediately. Awaiting this (it paginates the
+    // entire history) made the callback hang for many seconds before redirect.
+    // waitUntil keeps the function alive to finish the sync after responding.
+    waitUntil((async () => {
+      try {
+        const activities = await fetchAllActivities(token.access_token)
+        console.log(`Fetched ${activities.length} total activities for ${athlete}`)
+        await saveActivities(activities, athlete, stravaAthleteId)
+        console.log(`Saved history for ${athlete}`)
+      } catch (err) {
+        console.error('History sync failed (non-fatal):', err)
+      }
+    })())
 
     res.redirect(`${APP_URL}?athlete=${encodeURIComponent(athlete)}&strava_athlete=connected`)
   } catch (err) {

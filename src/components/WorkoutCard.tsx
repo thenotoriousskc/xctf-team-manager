@@ -205,6 +205,7 @@ export function WorkoutCard({
   const [stravaMiles, setStravaMiles] = useState<number | null>(null)
   const [stravaLastWeek, setStravaLastWeek] = useState<number | null>(null)
   const [stravaConnected, setStravaConnected] = useState<boolean | null>(null)
+  const [stravaLimitFull, setStravaLimitFull] = useState(false)
   const [stravaLoading, setStravaLoading] = useState(true)
 
   // This card belongs to the signed-in user (their email is bound to this
@@ -224,6 +225,7 @@ export function WorkoutCard({
       .then(data => {
         if (data.connected === false || data.error || data.miles === undefined) {
           setStravaConnected(false)
+          setStravaLimitFull(!!data.limitFull)
         } else {
           setStravaConnected(true)
           setStravaMiles(data.miles ?? null)
@@ -439,12 +441,13 @@ export function WorkoutCard({
         {false && <RoutineBar label="Post-Run Routine" content={postRunRoutine} />}
 
 
-        {/* Mileage — only shown when signed in */}
-        {isAuthenticated && (
+        {/* Mileage — only shown when signed in and Strava is connected. The
+            connect button itself lives at the bottom of the card. */}
+        {isAuthenticated && (stravaLoading || stravaConnected) && (
           <div className="bg-white rounded-xl p-4">
             {stravaLoading ? (
               <div className="text-center text-navy-400 text-sm py-2">…</div>
-            ) : stravaConnected ? (
+            ) : (
               <div className="flex gap-3">
                 <div className="flex-1 bg-orange-50 rounded-xl p-3 text-center">
                   <div className="text-3xl font-black" style={{ color: '#FC4C02' }}>
@@ -467,9 +470,7 @@ export function WorkoutCard({
                   </div>
                 )}
               </div>
-            ) : isSelf ? (
-              <StravaConnectButton athleteName={athleteName} />
-            ) : null}
+            )}
           </div>
         )}
 
@@ -603,6 +604,14 @@ export function WorkoutCard({
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Connect Strava — kept at the bottom so it's out of the way until the
+            athlete chooses to link their account. */}
+        {isAuthenticated && isSelf && stravaConnected === false && (
+          <div className="bg-white rounded-xl p-4">
+            <StravaConnectButton athleteName={athleteName} limitFull={stravaLimitFull} />
           </div>
         )}
       </div>
