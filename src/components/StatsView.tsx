@@ -367,8 +367,15 @@ function LeaderboardsTab({ results, courses, assign, excluded, onExclude, onRest
 }) {
   const namedCourses = courses.filter(c => c.name.trim())
   const [courseId, setCourseId] = useState<string>(namedCourses[0]?.id ?? '')
-  const [gender, setGender] = useState<'all' | 'M' | 'F'>('all')
+  // Leaderboards are single-gender; remember the last choice.
+  const [gender, setGender] = useState<'M' | 'F'>(() =>
+    localStorage.getItem('xctf-leaderboard-gender') === 'F' ? 'F' : 'M')
+  const pickGender = (g: 'M' | 'F') => {
+    setGender(g)
+    try { localStorage.setItem('xctf-leaderboard-gender', g) } catch { /* ignore */ }
+  }
   const [season, setSeason] = useState<string>('all')
+  const [grade, setGrade] = useState<string>('all')
   const excludedIds = useMemo(() => new Set(excluded.map(e => e.athleteId)), [excluded])
 
   // Results whose race is assigned to the selected course.
@@ -380,6 +387,10 @@ function LeaderboardsTab({ results, courses, assign, excluded, onExclude, onRest
     () => [...new Set(courseResults.map(r => r.season))].sort((a, b) => b.localeCompare(a)),
     [courseResults],
   )
+  const grades = useMemo(
+    () => [...new Set(courseResults.filter(r => r.gender === gender && r.grade != null).map(r => r.grade as number))].sort((a, b) => a - b),
+    [courseResults, gender],
+  )
 
   // Best (lowest seconds) result per athlete, after gender/season filter and
   // dropping excluded athletes (bad athletic.net data).
@@ -387,14 +398,15 @@ function LeaderboardsTab({ results, courses, assign, excluded, onExclude, onRest
     const best = new Map<string, XcResult>()
     for (const r of courseResults) {
       if (excludedIds.has(r.athleteId)) continue
-      if (gender !== 'all' && r.gender !== gender) continue
+      if (r.gender !== gender) continue
       if (season !== 'all' && r.season !== season) continue
+      if (grade !== 'all' && String(r.grade) !== grade) continue
       if (r.markSeconds == null) continue
       const cur = best.get(r.athleteId)
       if (!cur || (cur.markSeconds ?? Infinity) > r.markSeconds) best.set(r.athleteId, r)
     }
     return [...best.values()].sort((a, b) => (a.markSeconds ?? 0) - (b.markSeconds ?? 0))
-  }, [courseResults, gender, season, excludedIds])
+  }, [courseResults, gender, season, grade, excludedIds])
 
   if (namedCourses.length === 0) {
     return <div className="max-w-4xl mx-auto p-8 text-center text-gray-400 text-sm">Define and assign courses first (Courses tab).</div>
@@ -406,14 +418,17 @@ function LeaderboardsTab({ results, courses, assign, excluded, onExclude, onRest
         <select value={courseId} onChange={e => { setCourseId(e.target.value); setSeason('all') }} className="border border-gray-300 rounded-lg px-3 py-2 text-sm font-medium">
           {namedCourses.map(c => <option key={c.id} value={c.id}>{c.name}{c.distanceLabel ? ` (${c.distanceLabel})` : ''}</option>)}
         </select>
-        <select value={gender} onChange={e => setGender(e.target.value as 'all' | 'M' | 'F')} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-          <option value="all">All</option>
+        <select value={gender} onChange={e => { pickGender(e.target.value as 'M' | 'F'); setGrade('all') }} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
           <option value="M">Boys</option>
           <option value="F">Girls</option>
         </select>
         <select value={season} onChange={e => setSeason(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
           <option value="all">All seasons</option>
           {seasons.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={grade} onChange={e => setGrade(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <option value="all">All grades</option>
+          {grades.map(g => <option key={g} value={String(g)}>Grade {g}</option>)}
         </select>
       </div>
 
