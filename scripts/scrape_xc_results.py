@@ -191,12 +191,18 @@ def get_team_athlete_ids(driver, team_id, start_year, end_year):
     Stops early after MAX_EMPTY consecutive seasons with zero athletes (walked
     back past the team's first season on athletic.net)."""
     athletes: dict[str, dict] = {}
+    team_school = None
     empty_streak = 0
     MAX_EMPTY = 3
     for year in range(end_year, start_year - 1, -1):
         url = team_season_url(team_id, year)
         print(f'Loading {year}: {url}')
         soup = get_page(driver, url, wait_seconds=6)
+
+        # School name from the page title ("Bay School of San Francisco - High
+        # School Cross Country 2025") — used to drop transfers' other-school times.
+        if team_school is None and soup.title and soup.title.text:
+            team_school = soup.title.text.split(' - ')[0].strip() or None
 
         roster = extract_roster(soup)
         found = sum(1 for aid in roster if aid not in athletes)
@@ -215,8 +221,8 @@ def get_team_athlete_ids(driver, team_id, start_year, end_year):
             break
         time.sleep(random.uniform(6, 16))
 
-    print(f'Found {len(athletes)} athletes across {start_year}-{end_year}')
-    return athletes
+    print(f'Found {len(athletes)} athletes across {start_year}-{end_year}; team school: {team_school}')
+    return athletes, team_school
 
 
 # ── XC profile parsing ──────────────────────────────────────────────────────
@@ -284,23 +290,29 @@ def to_iso_date(month_day: str | None, year: str | None) -> str | None:
 
 def _season_header(section, i):
     """If section[i] starts an Individual-Results season block, return
-    (year, grade, content_start_index); else None.
+    (year, school, grade, content_start_index); else None.
 
-    A block is a YEAR line followed — within a few lines — by an "Nth Grade"
-    line. (Season Records also has year+grade sequences, but uses a bare grade
-    NUMBER like "10", not "10th Grade", so this only matches Individual Results.)
-    The grade line's position varies, so search a small window rather than a
-    fixed offset."""
+    A block is a YEAR line, then the school name, then (within a few lines) an
+    "Nth Grade" line. (Season Records also has year+grade sequences, but uses a
+    bare grade NUMBER like "10", not "10th Grade", so this only matches
+    Individual Results.) The grade line's position varies (some athletes have an
+    extra count line), so search a small window. The school name is the line
+    right after the year — needed to drop transfers' other-school results."""
     if not YEAR_RE.match(section[i]):
         return None
     for k in range(i + 2, min(i + 6, len(section))):
         m = GRADE_LINE_RE.match(section[k])
         if m:
-            return section[i], int(m.group(1)), k + 1
+            school = section[i + 1] if i + 1 < len(section) else ''
+            return section[i], school, int(m.group(1)), k + 1
     return None
 
 
-def parse_athlete_profile(soup) -> tuple[list[dict], list[dict], list[str]]:
+def _norm_school(s: str) -> str:
+    return re.sub(r'\s+', ' ', (s or '').strip().lower())
+
+
+def parse_athlete_profile(soup, team_school: str | None = None) -> tuple[list[dict], list[dict], list[str]]:
     lines = [l.strip() for l in soup.get_text(separator='\n').split('\n')]
     lines = [l for l in lines if l]
 
@@ -313,7 +325,7 @@ def parse_athlete_profile(soup) -> tuple[list[dict], list[dict], list[str]]:
 
     results: list[dict] = []   # per race
     seasons_seen: list[str] = []
-    year = grade = current_event = None
+    year = grade = school = current_event = None
     i = 0
 
     def is_result_start(k):
@@ -324,7 +336,7 @@ def parse_athlete_profile(soup) -> tuple[list[dict], list[dict], list[str]]:
         line = section[i]
         hdr = _season_header(section, i)
         if hdr:
-            year, grade, content_start = hdr
+            year, school, grade, content_start = hdr
             if year not in seasons_seen:
                 seasons_seen.append(year)
             current_event = None
@@ -361,11 +373,18 @@ def parse_athlete_profile(soup) -> tuple[list[dict], list[dict], list[str]]:
             results.append({
                 'event': current_event, 'season': year, 'grade': grade, 'place': place,
                 'mark': mark, 'date': date_md, 'race_date': to_iso_date(date_md, year),
-                'meet': meet, 'heat': heat, 'is_pb': is_pb,
+                'meet': meet, 'heat': heat, 'is_pb': is_pb, 'school': school,
             })
             i = j
             continue
         i += 1
+
+    # Drop results from other schools (transfers' profiles list every school
+    # they ran for; we only want their time as a team athlete).
+    if team_school:
+        ts = _norm_school(team_school)
+        results = [r for r in results if _norm_school(r.get('school', '')) == ts]
+        seasons_seen = sorted({r['season'] for r in results}, reverse=True)
 
     # PR = best (lowest seconds) per event across all races.
     by_event: dict[str, list[dict]] = {}
@@ -381,7 +400,7 @@ def parse_athlete_profile(soup) -> tuple[list[dict], list[dict], list[str]]:
     return prs, results, seasons_seen
 
 
-def get_athlete_xc(driver, athlete_id, name, dump=False):
+def get_athlete_xc(driver, athlete_id, name, team_school=None, dump=False):
     url = f'https://www.athletic.net/athlete/{athlete_id}/cross-country'
     print(f'  {name} ({athlete_id})...')
     soup = get_page(driver, url, wait_seconds=3)
@@ -397,7 +416,7 @@ def get_athlete_xc(driver, athlete_id, name, dump=False):
         profile_name = soup.title.text.split(' - ')[0].strip()
     resolved = profile_name or name
 
-    prs, history, seasons = parse_athlete_profile(soup)
+    prs, history, seasons = parse_athlete_profile(soup, team_school=team_school)
     print(f'    {resolved}: {len(prs)} PRs, {len(history)} results, seasons={seasons}')
     return resolved, prs, history, seasons
 
@@ -439,6 +458,7 @@ def push_to_supabase(results: dict):
                 'race_date': h.get('race_date'),
                 'meet': h.get('meet'),
                 'heat': h.get('heat'),
+                'school': h.get('school'),
                 'is_pb': bool(h.get('is_pb')),
             })
 
@@ -478,6 +498,7 @@ def main():
     parser.add_argument('--chrome-version', type=int, default=None, help='Pin Chrome major version (default: auto-detect)')
     parser.add_argument('--login', action='store_true', help='Log in to athletic.net first (unlocks per-meet times for all past seasons). Uses ATHLETICNET_EMAIL/PASSWORD, else prompts for manual login.')
     parser.add_argument('--supabase', action='store_true', help='Also upsert results into the xc_results table')
+    parser.add_argument('--school', type=str, default=None, help='Only keep results for this school name (default: auto-detected from team page; drops transfers\' other-school times)')
     args = parser.parse_args()
 
     if not args.team_id and not args.athlete_id:
@@ -507,10 +528,12 @@ def main():
             print('\n'.join(f'{i:3} | {l}' for i, l in enumerate(lines)))
             return
 
+        team_school = args.school
         if args.athlete_id:
             athletes = {args.athlete_id: {'name': 'Athlete', 'gender': None}}
         else:
-            athletes = get_team_athlete_ids(driver, args.team_id, args.start_year, args.end_year)
+            athletes, detected_school = get_team_athlete_ids(driver, args.team_id, args.start_year, args.end_year)
+            team_school = args.school or detected_school
             if not athletes:
                 print('No athletes found.')
                 return
@@ -518,7 +541,7 @@ def main():
                 athletes = dict(list(athletes.items())[:args.limit])
 
         for athlete_id, info in athletes.items():
-            resolved, prs, history, seasons = get_athlete_xc(driver, athlete_id, info['name'], dump=args.dump)
+            resolved, prs, history, seasons = get_athlete_xc(driver, athlete_id, info['name'], team_school=team_school, dump=args.dump)
             if args.dump:
                 return
             results[athlete_id] = {'name': resolved, 'gender': info.get('gender'),
