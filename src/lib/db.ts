@@ -373,13 +373,13 @@ export async function savePlanTemplates(templates: PlanTemplate[]) {
   const token = session?.access_token
   if (!token) throw new Error('Not signed in — cannot save plan templates')
 
-  const res = await fetch('/api/plan-templates', {
+  const res = await fetch('/api/coach-write', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ templates }),
+    body: JSON.stringify({ resource: 'plan-templates', templates }),
   })
   if (!res.ok) {
     const msg = await res.text().catch(() => '')
@@ -457,10 +457,10 @@ export async function saveCourses(courses: Course[], assignments: CourseAssignme
   const token = session?.access_token
   if (!token) throw new Error('Not signed in — cannot save courses')
 
-  const res = await fetch('/api/courses', {
+  const res = await fetch('/api/coach-write', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ courses, assignments }),
+    body: JSON.stringify({ resource: 'courses', courses, assignments }),
   })
   if (!res.ok) {
     const msg = await res.text().catch(() => '')
