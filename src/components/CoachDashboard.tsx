@@ -15,6 +15,7 @@ const PACE_TYPES: PaceType[] = ['easy', '5k', '3200', '1600', '800', '400', 'tem
 const DIST_UNITS: DistanceUnit[] = ['meters', 'miles', 'minutes']
 import { saveWorkoutRows, saveRoster, saveWorkoutHistory, fetchDayHistory, saveDayHistory, savePlanTemplates, saveSettings } from '../lib/db.ts'
 import { envCoaches } from '../lib/coaches.ts'
+import { localDay, addDays, mondayOf } from '../lib/dates.ts'
 import type { AthleticNetPR } from '../lib/types.ts'
 import { loadPRsFile, findAthleteId } from '../hooks/useAthleticNetPRs.ts'
 import { computeTrainingPaces } from '../lib/vdot.ts'
@@ -134,6 +135,7 @@ function WeeklyMilesTab({
   onNoteChange,
   planTemplates,
   refreshKey,
+  timezone,
 }: {
   roster: EditableRosterEntry[]
   onTargetChange: (id: string, target: string) => void
@@ -141,27 +143,20 @@ function WeeklyMilesTab({
   onNoteChange: (id: string, note: string) => void
   planTemplates: PlanTemplate[]
   refreshKey: number
+  timezone: string
 }) {
   const [weeklyMiles, setWeeklyMiles] = useState<Record<string, Record<string, number>>>({})
   const [grandTotals, setGrandTotals] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const currentWeekRef = useRef<HTMLTableCellElement>(null)
 
-  // Generate 16-week range of Monday dates, oldest first
+  // Generate 16-week range of Monday dates, oldest first. Computed in the team
+  // timezone so the current-week Monday matches the server's week keys (and
+  // doesn't slide to Tuesday on evening-Pacific loads). See src/lib/dates.ts.
   const weeks = useMemo(() => {
-    const result: string[] = []
-    const now = new Date()
-    const dow = now.getDay()
-    const thisMon = new Date(now)
-    thisMon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1))
-    thisMon.setHours(0, 0, 0, 0)
-    for (let i = 15; i >= 0; i--) {
-      const d = new Date(thisMon)
-      d.setDate(thisMon.getDate() - i * 7)
-      result.push(d.toISOString().slice(0, 10))
-    }
-    return result
-  }, [])
+    const thisMon = mondayOf(timezone)
+    return Array.from({ length: 16 }, (_, i) => addDays(thisMon, -(15 - i) * 7))
+  }, [timezone])
 
   const currentWeekStr = weeks[weeks.length - 1]
 
@@ -351,11 +346,13 @@ function MileageTab({
   onTargetChange,
   onReorder,
   refreshKey,
+  timezone,
 }: {
   roster: EditableRosterEntry[]
   onTargetChange: (id: string, target: string) => void
   onReorder: (fromName: string, toName: string) => void
   refreshKey: number
+  timezone: string
 }) {
   type DayEntry = {
     miles: number
@@ -373,31 +370,21 @@ function MileageTab({
   const [conflict, setConflict] = useState<{ name: string; date: string; entry: DayEntry } | null>(null)
   const todayRef = useRef<HTMLTableCellElement>(null)
 
-  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  // All calendar-day math runs in the team timezone (not UTC) — otherwise
+  // evening-Pacific shifts "today" and the week boundary onto the next day,
+  // dropping Monday's miles from CW. See src/lib/dates.ts / CLAUDE.md.
+  const todayStr = useMemo(() => localDay(timezone), [timezone])
 
   // 30 past days + today + 7 future = 38 columns
-  const dates = useMemo(() => {
-    return Array.from({ length: 38 }, (_, i) => {
-      const d = new Date()
-      d.setDate(d.getDate() - 30 + i)
-      return d.toISOString().slice(0, 10)
-    })
-  }, [])
+  const dates = useMemo(
+    () => Array.from({ length: 38 }, (_, i) => addDays(todayStr, -30 + i)),
+    [todayStr],
+  )
 
   // Monday of current week
-  const weekStartStr = useMemo(() => {
-    const now = new Date()
-    const dow = now.getDay()
-    const mon = new Date(now)
-    mon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1))
-    return mon.toISOString().slice(0, 10)
-  }, [])
+  const weekStartStr = useMemo(() => mondayOf(timezone), [timezone])
 
-  const sevenDaysAgoStr = useMemo(() => {
-    const d = new Date()
-    d.setDate(d.getDate() - 7)
-    return d.toISOString().slice(0, 10)
-  }, [])
+  const sevenDaysAgoStr = useMemo(() => addDays(todayStr, -7), [todayStr])
 
   useEffect(() => {
     setLoading(true)
@@ -3037,6 +3024,7 @@ export function CoachDashboard({
             }
             planTemplates={planTemplates}
             refreshKey={mileageRefreshKey}
+            timezone={settings.timezone}
           />
         ) : tab === 'mileage' ? (
           <MileageTab
@@ -3046,6 +3034,7 @@ export function CoachDashboard({
             }
             onReorder={reorderAthlete}
             refreshKey={mileageRefreshKey}
+            timezone={settings.timezone}
           />
         ) : isToday ? (
           <AthleteSheet
