@@ -158,6 +158,45 @@ export function StatsView({ user, onBack, onSignOut }: { user: User; onBack: () 
   )
 }
 
+// Dropdown that assigns to an existing course or creates a new one (prompting
+// for a name). Used both group-wide and per-race (so a mis-grouped race can be
+// peeled off to the right course).
+function AssignSelect({ courses, suggestedName, suggestedDist, onAddCourse, onPick, label }: {
+  courses: Course[]
+  suggestedName: string
+  suggestedDist: string
+  onAddCourse: (init?: Partial<Course>) => string
+  onPick: (courseId: string) => void
+  label: string
+}) {
+  return (
+    <select
+      defaultValue=""
+      onChange={e => {
+        const v = e.target.value
+        e.target.value = ''
+        if (!v) return
+        let cid: string
+        if (v === '__new__') {
+          const name = window.prompt('Name this course:', suggestedName)
+          if (name === null) return
+          cid = onAddCourse({ name: name.trim() || suggestedName, distanceLabel: suggestedDist })
+        } else {
+          cid = v
+        }
+        onPick(cid)
+      }}
+      className="border border-gray-300 rounded-lg px-2 py-1 text-xs bg-white"
+    >
+      <option value="">{label}</option>
+      <option value="__new__">+ New course…</option>
+      {courses.filter(c => c.name.trim()).map(c => (
+        <option key={c.id} value={c.id}>{c.name}</option>
+      ))}
+    </select>
+  )
+}
+
 // ─── Courses tab ──────────────────────────────────────────────────────────────
 function CoursesTab({
   courses, suggestions, races, assign,
@@ -209,37 +248,31 @@ function CoursesTab({
                     <div className="font-medium text-gray-900">{s.label}</div>
                     <div className="text-xs text-gray-500">{s.races.length} race{s.races.length > 1 ? 's' : ''} · {s.totalResults} results</div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <select
-                      defaultValue=""
-                      onChange={e => {
-                        const v = e.target.value
-                        e.target.value = ''
-                        if (!v) return
-                        let cid: string
-                        if (v === '__new__') {
-                          const suggested = s.label.replace(/ ~.*$/, '')
-                          const name = window.prompt('Name this course:', suggested)
-                          if (name === null) return // cancelled
-                          cid = onAddCourse({ name: name.trim() || suggested, distanceLabel: s.label.match(/~(.+)$/)?.[1] ?? '' })
-                        } else {
-                          cid = v
-                        }
-                        onAssignSuggestion(s.races, cid)
-                      }}
-                      className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                    >
-                      <option value="">Assign to…</option>
-                      <option value="__new__">+ New course from this group…</option>
-                      {courses.filter(c => c.name.trim()).map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {s.races.length > 1 && (
+                    <AssignSelect
+                      courses={courses}
+                      suggestedName={s.label.replace(/ ~.*$/, '')}
+                      suggestedDist={s.label.match(/~(.+)$/)?.[1] ?? ''}
+                      onAddCourse={onAddCourse}
+                      onPick={cid => onAssignSuggestion(s.races, cid)}
+                      label="Assign all to…"
+                    />
+                  )}
                 </div>
-                <ul className="mt-2 text-xs text-gray-600 space-y-0.5">
+                {/* Per-race assign — peel off any race the grouping got wrong. */}
+                <ul className="mt-2 space-y-1">
                   {s.races.map(r => (
-                    <li key={raceKey(r.meet, r.season, r.event)}>· {r.meet} · {r.season} · {r.event} ({r.count})</li>
+                    <li key={raceKey(r.meet, r.season, r.event)} className="flex items-center justify-between gap-2 text-xs text-gray-600">
+                      <span>{r.meet} · {r.season} · {r.event} ({r.count})</span>
+                      <AssignSelect
+                        courses={courses}
+                        suggestedName={s.label.replace(/ ~.*$/, '')}
+                        suggestedDist={s.label.match(/~(.+)$/)?.[1] ?? ''}
+                        onAddCourse={onAddCourse}
+                        onPick={cid => onSetRaceCourse(r.meet, r.season, r.event, cid)}
+                        label="Assign…"
+                      />
+                    </li>
                   ))}
                 </ul>
               </div>
